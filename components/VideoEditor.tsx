@@ -107,6 +107,7 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
         setClips([])
     }
 
+
     // Simple approach: Force video ready after a very short delay
     useEffect(() => {
         console.log('VideoEditor mounted, videoUrl:', videoUrl)
@@ -124,6 +125,7 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
             clearTimeout(forceReadyTimer)
         }
     }, [videoUrl])
+
 
     useEffect(() => {
         const video = videoRef.current

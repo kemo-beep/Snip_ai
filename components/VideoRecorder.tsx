@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Video, Square, Play, Pause, Upload } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface VideoRecorderProps {
     onVideoRecorded: (videoBlob: Blob) => void
@@ -22,6 +23,12 @@ export default function VideoRecorder({
     const [isPaused, setIsPaused] = useState(false)
     const [recordedVideo, setRecordedVideo] = useState<string | null>(null)
     const [recordingTime, setRecordingTime] = useState(0)
+    const [showPermissionScreen, setShowPermissionScreen] = useState(false)
+    const [permissions, setPermissions] = useState({
+        screen: false,
+        webcam: false,
+        microphone: false
+    })
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
     const videoRef = useRef<HTMLVideoElement>(null)
@@ -29,53 +36,162 @@ export default function VideoRecorder({
     const chunksRef = useRef<Blob[]>([])
     const timerRef = useRef<NodeJS.Timeout | null>(null)
 
+    // Permission request functions
+    const requestScreenPermission = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({
+                video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
+                audio: true
+            })
+            setPermissions(prev => ({ ...prev, screen: true, microphone: true }))
+            // Stop the stream immediately after getting permission
+            stream.getTracks().forEach(track => track.stop())
+            return true
+        } catch (error) {
+            console.error('Screen permission denied:', error)
+            return false
+        }
+    }
+
+    const requestWebcamPermission = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: { ideal: 640 }, height: { ideal: 480 } },
+                audio: false
+            })
+            setPermissions(prev => ({ ...prev, webcam: true }))
+            // Stop the stream immediately after getting permission
+            stream.getTracks().forEach(track => track.stop())
+            return true
+        } catch (error) {
+            console.error('Webcam permission denied:', error)
+            return false
+        }
+    }
+
+    const requestAllPermissions = async () => {
+        setShowPermissionScreen(true)
+
+        const screenGranted = await requestScreenPermission()
+        if (!screenGranted) {
+            alert('Screen recording permission is required to continue.')
+            setShowPermissionScreen(false)
+            return false
+        }
+
+        const webcamGranted = await requestWebcamPermission()
+        if (!webcamGranted) {
+            alert('Webcam permission is required for picture-in-picture recording.')
+            setShowPermissionScreen(false)
+            return false
+        }
+
+        setShowPermissionScreen(false)
+        return true
+    }
+
+    // Fallback function to record just screen without webcam
+    const recordScreenOnly = async (screenStream: MediaStream, mimeType: string) => {
+        console.log('Starting fallback screen-only recording...')
+
+        const fallbackRecorder = new MediaRecorder(screenStream, { mimeType })
+        const fallbackChunks: Blob[] = []
+
+        fallbackRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                fallbackChunks.push(event.data)
+                console.log('Fallback data available:', event.data.size, 'bytes')
+            }
+        }
+
+        fallbackRecorder.onstop = () => {
+            const videoBlob = new Blob(fallbackChunks, { type: mimeType })
+            console.log('Fallback video blob size:', videoBlob.size, 'bytes')
+
+            if (videoBlob.size > 0) {
+                const videoUrl = URL.createObjectURL(videoBlob)
+                setRecordedVideo(videoUrl)
+                onVideoRecorded(videoBlob)
+                toast.info('Recorded screen only (webcam overlay failed)')
+            } else {
+                alert('Recording failed completely. Please try again.')
+            }
+        }
+
+        fallbackRecorder.start(100)
+        console.log('Fallback recorder started')
+
+        // Stop after 3 seconds for testing
+        setTimeout(() => {
+            fallbackRecorder.stop()
+        }, 3000)
+    }
+
     const startRecording = useCallback(async () => {
         try {
-            console.log('Starting recording...')
+            console.log('Starting simple screen recording...')
 
-            // Request screen access only (simplified to fix 0-byte issue)
+            // Check if we have permissions, if not request them
+            if (!permissions.screen) {
+                const granted = await requestAllPermissions()
+                if (!granted) {
+                    return
+                }
+            }
+
+            // Request screen recording only for now
+            console.log('Requesting screen recording...')
             const screenStream = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 }
-                },
+                video: true,
                 audio: true
             })
 
             console.log('Screen stream obtained:', screenStream)
 
-            // Use screen stream directly (no canvas for now)
+            // Use screen stream directly
             streamRef.current = screenStream
+            console.log('Using screen stream directly')
 
             // Create MediaRecorder with screen stream
+            let mimeType = 'video/webm;codecs=vp9'
+            if (!MediaRecorder.isTypeSupported(mimeType)) {
+                mimeType = 'video/webm'
+            }
+            if (!MediaRecorder.isTypeSupported(mimeType)) {
+                mimeType = 'video/mp4'
+            }
+
+            console.log('Using MIME type:', mimeType)
+            console.log('Stream tracks:', screenStream.getTracks().length)
+
             const mediaRecorder = new MediaRecorder(screenStream, {
-                mimeType: 'video/webm;codecs=vp9'
+                mimeType: mimeType
             })
 
             mediaRecorderRef.current = mediaRecorder
             chunksRef.current = []
 
             mediaRecorder.ondataavailable = (event) => {
-                console.log('MediaRecorder data available:', event.data.size, 'bytes')
+                console.log('Data available:', event.data.size, 'bytes')
                 if (event.data.size > 0) {
                     chunksRef.current.push(event.data)
                 }
             }
 
             mediaRecorder.onstop = () => {
-                console.log('MediaRecorder stopped, total chunks:', chunksRef.current.length)
-                const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' })
-                console.log('Created video blob:', videoBlob.size, 'bytes')
+                console.log('Recording stopped, chunks:', chunksRef.current.length)
+                const videoBlob = new Blob(chunksRef.current, { type: mimeType })
+                console.log('Video blob size:', videoBlob.size, 'bytes')
 
-                if (videoBlob.size === 0) {
-                    console.error('Video blob is 0 bytes!')
+                if (videoBlob.size > 0) {
+                    const videoUrl = URL.createObjectURL(videoBlob)
+                    setRecordedVideo(videoUrl)
+                    onVideoRecorded(videoBlob)
+                    console.log('Video recorded successfully!')
+                } else {
+                    console.error('Recording failed - 0 bytes')
                     alert('Recording failed - no data captured. Please try again.')
-                    return
                 }
-
-                const videoUrl = URL.createObjectURL(videoBlob)
-                setRecordedVideo(videoUrl)
-                onVideoRecorded(videoBlob)
             }
 
             mediaRecorder.onerror = (event) => {
@@ -83,15 +199,12 @@ export default function VideoRecorder({
                 alert('Recording error occurred. Please try again.')
             }
 
-            mediaRecorder.onstart = () => {
-                console.log('MediaRecorder started successfully')
-            }
-
-            mediaRecorder.start(1000) // Collect data every second
+            // Start recording
+            mediaRecorder.start(100)
             setIsRecording(true)
             setRecordingTime(0)
 
-            // Notify parent component that recording started
+            // Notify parent component
             if (onStartRecording) {
                 onStartRecording()
             }
@@ -105,7 +218,7 @@ export default function VideoRecorder({
             console.error('Error starting recording:', error)
             alert('Failed to start recording. Please check permissions.')
         }
-    }, [onVideoRecorded, isRecording, isPaused, onStartRecording])
+    }, [onVideoRecorded, isRecording, isPaused, onStartRecording, permissions])
 
     const stopRecording = useCallback(() => {
         if (mediaRecorderRef.current && isRecording) {
@@ -167,6 +280,36 @@ export default function VideoRecorder({
                 </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+                {showPermissionScreen && (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
+                        <div className="text-center space-y-4">
+                            <div className="flex justify-center">
+                                <div className="w-16 h-16 bg-blue-100 dark:bg-blue-800 rounded-full flex items-center justify-center">
+                                    <Video className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+                                </div>
+                            </div>
+                            <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100">
+                                Permission Required
+                            </h3>
+                            <p className="text-blue-700 dark:text-blue-300">
+                                We need your permission to access your screen and webcam for recording.
+                            </p>
+                            <div className="space-y-2 text-sm text-blue-600 dark:text-blue-400">
+                                <div className="flex items-center justify-center gap-2">
+                                    <div className={`w-3 h-3 rounded-full ${permissions.screen ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                                    <span>Screen Recording & Microphone</span>
+                                </div>
+                                <div className="flex items-center justify-center gap-2">
+                                    <div className={`w-3 h-3 rounded-full ${permissions.webcam ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                                    <span>Webcam Access</span>
+                                </div>
+                            </div>
+                            <div className="text-xs text-blue-500 dark:text-blue-400">
+                                Please allow access when prompted by your browser.
+                            </div>
+                        </div>
+                    </div>
+                )}
                 {!recordedVideo ? (
                     <div className="space-y-4">
                         <div className="text-center">
@@ -179,10 +322,57 @@ export default function VideoRecorder({
 
                         <div className="flex justify-center gap-4">
                             {!isRecording ? (
-                                <Button onClick={startRecording} size="lg" className="gap-2">
-                                    <Play className="h-4 w-4" />
-                                    Start Recording
-                                </Button>
+                                <>
+                                    <Button
+                                        onClick={requestAllPermissions}
+                                        variant="outline"
+                                        size="lg"
+                                        className="gap-2"
+                                    >
+                                        <Video className="h-4 w-4" />
+                                        Test Permissions
+                                    </Button>
+                                    <Button
+                                        onClick={async () => {
+                                            try {
+                                                const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+                                                console.log('Test stream:', stream)
+                                                const recorder = new MediaRecorder(stream)
+                                                const chunks: Blob[] = []
+                                                recorder.ondataavailable = (e) => {
+                                                    console.log('Test data:', e.data.size)
+                                                    if (e.data.size > 0) chunks.push(e.data)
+                                                }
+                                                recorder.onstop = () => {
+                                                    const blob = new Blob(chunks, { type: 'video/webm' })
+                                                    console.log('Test blob size:', blob.size)
+                                                    if (blob.size > 0) {
+                                                        toast.success(`Test recording successful: ${blob.size} bytes`)
+                                                    } else {
+                                                        toast.error('Test recording failed: 0 bytes')
+                                                    }
+                                                }
+                                                recorder.start()
+                                                setTimeout(() => {
+                                                    recorder.stop()
+                                                    stream.getTracks().forEach(t => t.stop())
+                                                }, 2000)
+                                            } catch (e) {
+                                                console.error('Test failed:', e)
+                                                toast.error('Test failed: ' + e)
+                                            }
+                                        }}
+                                        variant="outline"
+                                        size="sm"
+                                        className="gap-2"
+                                    >
+                                        Test Recorder
+                                    </Button>
+                                    <Button onClick={startRecording} size="lg" className="gap-2">
+                                        <Play className="h-4 w-4" />
+                                        Start Recording
+                                    </Button>
+                                </>
                             ) : (
                                 <>
                                     <Button

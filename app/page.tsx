@@ -68,6 +68,10 @@ export default function Home() {
         setIsTranscribing(false)
       }
 
+      // Automatically open the video editor after upload
+      setShowEditor(true)
+      toast.info('Opening video editor...')
+
     } catch (error) {
       console.error('Upload failed:', error)
       toast.error('Failed to upload video')
