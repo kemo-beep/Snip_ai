@@ -68,6 +68,10 @@ interface RightSidebarProps {
     onAddClip: (clip: Clip) => void
     onRemoveClip: (clipId: string) => void
     onUpdateClip: (clipId: string, updates: Partial<Clip>) => void
+    webcamOverlayPosition: { x: number, y: number }
+    setWebcamOverlayPosition: (position: { x: number, y: number }) => void
+    webcamOverlaySize: { width: number, height: number }
+    setWebcamOverlaySize: (size: { width: number, height: number }) => void
 }
 
 export default function RightSidebar({
@@ -82,7 +86,11 @@ export default function RightSidebar({
     clips,
     onAddClip,
     onRemoveClip,
-    onUpdateClip
+    onUpdateClip,
+    webcamOverlayPosition,
+    setWebcamOverlayPosition,
+    webcamOverlaySize,
+    setWebcamOverlaySize
 }: RightSidebarProps) {
     const [activeTab, setActiveTab] = useState('background')
     const [showAddOverlay, setShowAddOverlay] = useState(false)
@@ -497,6 +505,57 @@ export default function RightSidebar({
         </div>
     )
 
+    const renderCameraTab = () => (
+        <div className="space-y-4">
+            <div>
+                <Label className="text-xs">Position</Label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                    <div>
+                        <Label className="text-xs">X</Label>
+                        <Slider
+                            value={[webcamOverlayPosition.x]}
+                            onValueChange={(value) => setWebcamOverlayPosition({ ...webcamOverlayPosition, x: value[0] })}
+                            max={1920} // Assuming max width of the screen recording
+                            step={1}
+                        />
+                    </div>
+                    <div>
+                        <Label className="text-xs">Y</Label>
+                        <Slider
+                            value={[webcamOverlayPosition.y]}
+                            onValueChange={(value) => setWebcamOverlayPosition({ ...webcamOverlayPosition, y: value[0] })}
+                            max={1080} // Assuming max height of the screen recording
+                            step={1}
+                        />
+                    </div>
+                </div>
+            </div>
+            <div>
+                <Label className="text-xs">Size</Label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                    <div>
+                        <Label className="text-xs">Width</Label>
+                        <Slider
+                            value={[webcamOverlaySize.width]}
+                            onValueChange={(value) => setWebcamOverlaySize({ ...webcamOverlaySize, width: value[0] })}
+                            max={1000}
+                            step={1}
+                        />
+                    </div>
+                    <div>
+                        <Label className="text-xs">Height</Label>
+                        <Slider
+                            value={[webcamOverlaySize.height]}
+                            onValueChange={(value) => setWebcamOverlaySize({ ...webcamOverlaySize, height: value[0] })}
+                            max={1000}
+                            step={1}
+                        />
+                    </div>
+                </div>
+            </div>
+        </div>
+    )
+
     const renderTabContent = () => {
         switch (activeTab) {
             case 'media':
@@ -513,7 +572,7 @@ export default function RightSidebar({
             case 'cursor':
                 return <div className="text-sm text-gray-400">Cursor settings coming soon...</div>
             case 'camera':
-                return <div className="text-sm text-gray-400">Camera settings coming soon...</div>
+                return renderCameraTab()
             case 'chat':
                 return renderOverlayTab()
             case 'audio':

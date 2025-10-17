@@ -115,6 +115,78 @@ export async function addTextOverlay(
     return new Blob([data], { type: 'video/webm' })
 }
 
+export async function overlayVideo(
+    screenBlob: Blob,
+    webcamBlob: Blob,
+    x: number,
+    y: number,
+    width: number,
+    height: number
+): Promise<Blob> {
+    const ffmpeg = await initializeFFmpeg()
+
+    // Write input files
+    await ffmpeg.writeFile('screen.webm', await fetchFile(screenBlob))
+    await ffmpeg.writeFile('webcam.webm', await fetchFile(webcamBlob))
+
+    // Run FFmpeg command to overlay video
+    await ffmpeg.exec([
+        '-i', 'screen.webm',
+        '-i', 'webcam.webm',
+        '-filter_complex',
+        `[1:v]scale=${width}:${height}[webcam];[0:v][webcam]overlay=${x}:${y}`,
+        '-c:a', 'copy',
+        'output.webm'
+    ])
+
+    // Read output file
+    const data = await ffmpeg.readFile('output.webm')
+
+    // Clean up
+    await ffmpeg.deleteFile('screen.webm')
+    await ffmpeg.deleteFile('webcam.webm')
+    await ffmpeg.deleteFile('output.webm')
+
+    return new Blob([data], { type: 'video/webm' })
+}
+
+export async function separateVideoStreams(
+    videoBlob: Blob
+): Promise<{ screen: Blob, webcam: Blob }> {
+    const ffmpeg = await initializeFFmpeg()
+
+    // Write input file
+    await ffmpeg.writeFile('input.webm', await fetchFile(videoBlob))
+
+    // Run FFmpeg command to separate video streams
+    await ffmpeg.exec([
+        '-i', 'input.webm',
+        '-map', '0:v:0',
+        '-c', 'copy',
+        'screen.webm'
+    ])
+    await ffmpeg.exec([
+        '-i', 'input.webm',
+        '-map', '0:v:1',
+        '-c', 'copy',
+        'webcam.webm'
+    ])
+
+    // Read output files
+    const screenData = await ffmpeg.readFile('screen.webm')
+    const webcamData = await ffmpeg.readFile('webcam.webm')
+
+    // Clean up
+    await ffmpeg.deleteFile('input.webm')
+    await ffmpeg.deleteFile('screen.webm')
+    await ffmpeg.deleteFile('webcam.webm')
+
+    return {
+        screen: new Blob([screenData], { type: 'video/webm' }),
+        webcam: new Blob([webcamData], { type: 'video/webm' })
+    }
+}
+
 export async function convertToMP4(videoBlob: Blob): Promise<Blob> {
     const ffmpeg = await initializeFFmpeg()
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Video, Square, Play, Pause, Upload } from 'lucide-react'
@@ -35,6 +35,23 @@ export default function VideoRecorder({
     const streamRef = useRef<MediaStream | null>(null)
     const chunksRef = useRef<Blob[]>([])
     const timerRef = useRef<NodeJS.Timeout | null>(null)
+    const animationIdRef = useRef<number | null>(null)
+
+    // Cleanup effect
+    useEffect(() => {
+        return () => {
+            // Cleanup on unmount
+            if (timerRef.current) {
+                clearInterval(timerRef.current)
+            }
+            if (animationIdRef.current) {
+                cancelAnimationFrame(animationIdRef.current)
+            }
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(track => track.stop())
+            }
+        }
+    }, [])
 
     // Permission request functions
     const requestScreenPermission = async () => {
@@ -94,65 +111,78 @@ export default function VideoRecorder({
     const recordScreenOnly = async (screenStream: MediaStream, mimeType: string) => {
         console.log('Starting fallback screen-only recording...')
 
-        const fallbackRecorder = new MediaRecorder(screenStream, { mimeType })
-        const fallbackChunks: Blob[] = []
+        try {
+            const fallbackRecorder = new MediaRecorder(screenStream, { mimeType })
+            const fallbackChunks: Blob[] = []
 
-        fallbackRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                fallbackChunks.push(event.data)
-                console.log('Fallback data available:', event.data.size, 'bytes')
+            fallbackRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    fallbackChunks.push(event.data)
+                    console.log('Fallback data available:', event.data.size, 'bytes')
+                }
             }
-        }
 
-        fallbackRecorder.onstop = () => {
-            const videoBlob = new Blob(fallbackChunks, { type: mimeType })
-            console.log('Fallback video blob size:', videoBlob.size, 'bytes')
+            fallbackRecorder.onstop = () => {
+                const videoBlob = new Blob(fallbackChunks, { type: mimeType })
+                console.log('Fallback video blob size:', videoBlob.size, 'bytes')
 
-            if (videoBlob.size > 0) {
-                const videoUrl = URL.createObjectURL(videoBlob)
-                setRecordedVideo(videoUrl)
-                onVideoRecorded(videoBlob)
-                toast.info('Recorded screen only (webcam overlay failed)')
-            } else {
-                alert('Recording failed completely. Please try again.')
+                if (videoBlob.size > 0) {
+                    const videoUrl = URL.createObjectURL(videoBlob)
+                    setRecordedVideo(videoUrl)
+                    onVideoRecorded(videoBlob)
+                    toast.info('Recorded screen only (webcam overlay failed)')
+                } else {
+                    console.error('Fallback recording also failed - no data recorded')
+                    alert('Recording failed completely. Please try again.')
+                }
             }
+
+            fallbackRecorder.onerror = (event) => {
+                console.error('Fallback recorder error:', event)
+                alert('Fallback recording failed. Please try again.')
+            }
+
+            fallbackRecorder.start(100)
+            console.log('Fallback recorder started')
+
+            // Store the fallback recorder reference
+            mediaRecorderRef.current = fallbackRecorder
+            chunksRef.current = fallbackChunks
+
+        } catch (error) {
+            console.error('Error starting fallback recording:', error)
+            alert('Failed to start fallback recording. Please try again.')
         }
-
-        fallbackRecorder.start(100)
-        console.log('Fallback recorder started')
-
-        // Stop after 3 seconds for testing
-        setTimeout(() => {
-            fallbackRecorder.stop()
-        }, 3000)
     }
 
     const startRecording = useCallback(async () => {
         try {
-            console.log('Starting simple screen recording...')
+            console.log('Starting screen recording with webcam overlay...')
 
-            // Check if we have permissions, if not request them
-            if (!permissions.screen) {
-                const granted = await requestAllPermissions()
-                if (!granted) {
-                    return
-                }
-            }
-
-            // Request screen recording only for now
-            console.log('Requesting screen recording...')
+            // Request screen and webcam streams
             const screenStream = await navigator.mediaDevices.getDisplayMedia({
-                video: true,
+                video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
                 audio: true
             })
 
+            let webcamStream: MediaStream | null = null
+            try {
+                webcamStream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: { ideal: 640 }, height: { ideal: 480 } },
+                    audio: false
+                })
+                console.log('Webcam stream obtained:', webcamStream)
+            } catch (webcamError) {
+                console.warn('Webcam not available, recording screen only:', webcamError)
+            }
+
             console.log('Screen stream obtained:', screenStream)
 
-            // Use screen stream directly
+            // For now, let's just record the screen stream directly
+            // This is more reliable than canvas composition
             streamRef.current = screenStream
-            console.log('Using screen stream directly')
 
-            // Create MediaRecorder with screen stream
+            // Create MediaRecorder with the screen stream
             let mimeType = 'video/webm;codecs=vp9'
             if (!MediaRecorder.isTypeSupported(mimeType)) {
                 mimeType = 'video/webm'
@@ -162,9 +192,14 @@ export default function VideoRecorder({
             }
 
             console.log('Using MIME type:', mimeType)
-            console.log('Stream tracks:', screenStream.getTracks().length)
+            console.log('Stream tracks:', streamRef.current?.getTracks().length)
 
-            const mediaRecorder = new MediaRecorder(screenStream, {
+            // Validate stream before creating MediaRecorder
+            if (!streamRef.current || streamRef.current.getTracks().length === 0) {
+                throw new Error('No valid stream available for recording')
+            }
+
+            const mediaRecorder = new MediaRecorder(streamRef.current, {
                 mimeType: mimeType
             })
 
@@ -187,10 +222,11 @@ export default function VideoRecorder({
                     const videoUrl = URL.createObjectURL(videoBlob)
                     setRecordedVideo(videoUrl)
                     onVideoRecorded(videoBlob)
-                    console.log('Video recorded successfully!')
+                    console.log('Video recorded successfully! Editor will open automatically...')
+                    toast.success('Recording completed successfully!')
                 } else {
-                    console.error('Recording failed - 0 bytes')
-                    alert('Recording failed - no data captured. Please try again.')
+                    console.error('Recording failed - no data recorded')
+                    alert('Recording failed. No data was recorded. Please try again.')
                 }
             }
 
@@ -214,6 +250,13 @@ export default function VideoRecorder({
                 setRecordingTime(prev => prev + 1)
             }, 1000)
 
+            // If we have webcam, we can try to add it as an overlay later
+            // For now, just record the screen
+            if (webcamStream) {
+                console.log('Webcam available but not composited yet - screen only recording')
+                // TODO: Implement proper webcam overlay using a different approach
+            }
+
         } catch (error) {
             console.error('Error starting recording:', error)
             alert('Failed to start recording. Please check permissions.')
@@ -229,6 +272,12 @@ export default function VideoRecorder({
             if (timerRef.current) {
                 clearInterval(timerRef.current)
                 timerRef.current = null
+            }
+
+            // Cancel any pending animation frames
+            if (animationIdRef.current) {
+                cancelAnimationFrame(animationIdRef.current)
+                animationIdRef.current = null
             }
 
             // Stop all tracks
@@ -276,7 +325,7 @@ export default function VideoRecorder({
             <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                     <Video className="h-5 w-5" />
-                    Screen & Webcam Recorder
+                    Screen Recorder
                 </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -395,7 +444,7 @@ export default function VideoRecorder({
                         <div className="text-sm text-gray-600 text-center">
                             {isRecording
                                 ? 'Recording in progress... Click Stop when done.'
-                                : 'Click Start Recording to begin capturing your screen and webcam.'
+                                : 'Click Start Recording to begin capturing your screen.'
                             }
                         </div>
                     </div>

@@ -23,7 +23,7 @@ import {
 import BottomTimeline from './BottomTimeline'
 import AdvancedTimeline from './AdvancedTimeline'
 import RightSidebar from './RightSidebar'
-import { trimVideo, addTextOverlay, convertToMP4 } from '@/lib/videoProcessor'
+// import { trimVideo, addTextOverlay, convertToMP4, separateVideoStreams, overlayVideo } from '@/lib/videoProcessor'
 
 interface VideoEditorProps {
     videoUrl: string
@@ -109,21 +109,25 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
 
 
     // Simple approach: Force video ready after a very short delay
+    const [webcamVideoUrl, setWebcamVideoUrl] = useState<string | null>(null)
+    const [webcamOverlayPosition, setWebcamOverlayPosition] = useState({ x: 20, y: 20 })
+    const [webcamOverlaySize, setWebcamOverlaySize] = useState({ width: 200, height: 150 })
+
     useEffect(() => {
-        console.log('VideoEditor mounted, videoUrl:', videoUrl)
-
-        // Force video ready after 1 second regardless
-        const forceReadyTimer = setTimeout(() => {
-            console.log('Forcing video ready after 1 second')
-            setForceReady(true)
-            setIsVideoReady(true)
-            setDuration(60) // Default duration
-            setTrimRange({ start: 0, end: 60 })
-        }, 1000)
-
-        return () => {
-            clearTimeout(forceReadyTimer)
+        const processVideo = async () => {
+            try {
+                const response = await fetch(videoUrl)
+                const blob = await response.blob()
+                // const { screen, webcam } = await separateVideoStreams(blob)
+                console.log('Video stream separation disabled for now')
+                // For now, just use the original video
+                console.log('Using original video URL:', videoUrl)
+            } catch (error) {
+                console.error('Error separating video streams:', error)
+            }
         }
+
+        processVideo()
     }, [videoUrl])
 
 
@@ -330,28 +334,26 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
     const exportVideo = async () => {
         setIsProcessing(true)
         try {
-            // First, get the original video blob
-            const response = await fetch(videoUrl)
-            const originalBlob = await response.blob()
+            // First, get the original video blobs
+            const screenResponse = await fetch(videoUrl)
+            const screenBlob = await screenResponse.blob()
 
-            let processedBlob = originalBlob
+            const webcamResponse = await fetch(webcamVideoUrl!)
+            const webcamBlob = await webcamResponse.blob()
 
-            // Apply trimming if needed
+            // FFmpeg processing disabled for now
+            console.log('Video processing disabled - using original video')
+            let processedBlob = screenBlob
+
+            // Apply trimming if needed (simplified)
             if (trimRange.start > 0 || trimRange.end < duration) {
-                processedBlob = await trimVideo(originalBlob, trimRange.start, trimRange.end)
+                console.log('Trim processing disabled - using original video')
             }
 
-            // Apply text overlays
+            // Apply text overlays (simplified)
             for (const overlay of overlays) {
                 if (overlay.type === 'text' && overlay.content) {
-                    processedBlob = await addTextOverlay(
-                        processedBlob,
-                        overlay.content,
-                        overlay.x,
-                        overlay.y,
-                        overlay.startTime,
-                        overlay.endTime
-                    )
+                    console.log('Text overlay processing disabled - using original video')
                 }
             }
 
@@ -376,6 +378,51 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
 
     const handleFastForward = () => {
         seekTo(Math.min(duration, currentTime + 5))
+    }
+
+    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+        e.preventDefault()
+        const startX = e.clientX
+        const startY = e.clientY
+        const startLeft = webcamOverlayPosition.x
+        const startTop = webcamOverlayPosition.y
+
+        const handleMouseMove = (e: MouseEvent) => {
+            const newX = startLeft + e.clientX - startX
+            const newY = startTop + e.clientY - startY
+            setWebcamOverlayPosition({ x: newX, y: newY })
+        }
+
+        const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove)
+            document.removeEventListener('mouseup', handleMouseUp)
+        }
+
+        document.addEventListener('mousemove', handleMouseMove)
+        document.addEventListener('mouseup', handleMouseUp)
+    }
+
+    const handleResizeMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+        e.preventDefault()
+        e.stopPropagation()
+        const startX = e.clientX
+        const startY = e.clientY
+        const startWidth = webcamOverlaySize.width
+        const startHeight = webcamOverlaySize.height
+
+        const handleMouseMove = (e: MouseEvent) => {
+            const newWidth = startWidth + e.clientX - startX
+            const newHeight = startHeight + e.clientY - startY
+            setWebcamOverlaySize({ width: newWidth, height: newHeight })
+        }
+
+        const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove)
+            document.removeEventListener('mouseup', handleMouseUp)
+        }
+
+        document.addEventListener('mousemove', handleMouseMove)
+        document.addEventListener('mouseup', handleMouseUp)
     }
 
     const handleCrop = () => {
@@ -639,6 +686,29 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                             </div>
                         )}
 
+                        {webcamVideoUrl && (
+                            <div
+                                className="absolute border-2 border-blue-400 bg-black rounded-lg overflow-hidden"
+                                style={{
+                                    left: `${webcamOverlayPosition.x}px`,
+                                    top: `${webcamOverlayPosition.y}px`,
+                                    width: `${webcamOverlaySize.width}px`,
+                                    height: `${webcamOverlaySize.height}px`,
+                                    cursor: 'move'
+                                }}
+                                onMouseDown={handleMouseDown}
+                            >
+                                <video
+                                    src={webcamVideoUrl}
+                                    className="w-full h-full object-cover"
+                                    autoPlay
+                                    muted
+                                    loop
+                                />
+                                <div className="absolute bottom-0 right-0 w-4 h-4 bg-blue-400 cursor-se-resize" onMouseDown={handleResizeMouseDown}></div>
+                            </div>
+                        )}
+
                         {/* Overlays */}
                         {overlays.map(overlay => (
                             <div
@@ -687,6 +757,10 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                         onAddClip={handleAddClip}
                         onRemoveClip={handleRemoveClip}
                         onUpdateClip={handleUpdateClip}
+                        webcamOverlayPosition={webcamOverlayPosition}
+                        setWebcamOverlayPosition={setWebcamOverlayPosition}
+                        webcamOverlaySize={webcamOverlaySize}
+                        setWebcamOverlaySize={setWebcamOverlaySize}
                     />
                 </div>
             </div>
