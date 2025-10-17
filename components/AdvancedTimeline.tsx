@@ -145,6 +145,13 @@ export default function AdvancedTimeline({
             clips: clips.filter(clip => clip.type === 'audio')
         }
     ]
+
+    // Debug logging
+    useEffect(() => {
+        console.log('AdvancedTimeline received clips:', clips)
+        console.log('Video clips:', clips.filter(clip => clip.type === 'video'))
+        console.log('Audio clips:', clips.filter(clip => clip.type === 'audio'))
+    }, [clips])
     const [markers, setMarkers] = useState<Marker[]>([])
     const [isResizing, setIsResizing] = useState<string | null>(null)
     const [resizeStart, setResizeStart] = useState<{ time: number; clipId: string; edge: 'start' | 'end' } | null>(null)

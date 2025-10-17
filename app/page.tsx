@@ -27,6 +27,8 @@ export default function Home() {
     setRecordedVideo(videoBlob)
     const url = URL.createObjectURL(videoBlob)
     setVideoUrl(url)
+    // Show editor immediately after recording
+    setShowEditor(true)
   }
 
   const handleStartRecording = () => {

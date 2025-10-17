@@ -137,37 +137,46 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
             // Try to load the video immediately
             console.log('Video element found, attempting to load:', videoUrl)
             video.load()
+
+            const addRecordedVideoClip = (duration: number) => {
+                if (videoUrl) {
+                    console.log('Adding recorded video as clip to timeline')
+                    setClips(prev => {
+                        // Check if recorded video already exists
+                        const existingRecordedVideo = prev.find(clip => clip.name === 'Recorded Video')
+                        if (existingRecordedVideo) {
+                            console.log('Recorded video already exists in timeline')
+                            return prev // Don't add duplicate
+                        }
+
+                        const recordedVideoClip = {
+                            id: `recorded-video-${Date.now()}`,
+                            type: 'video' as const,
+                            name: 'Recorded Video',
+                            duration: duration,
+                            startTime: 0,
+                            endTime: duration,
+                            trackId: 'video-1',
+                            thumbnail: videoUrl, // Use video URL as thumbnail for now
+                            color: '#3b82f6', // Blue color for recorded video
+                            muted: false,
+                            locked: false
+                        }
+                        console.log('Adding new recorded video clip:', recordedVideoClip)
+                        return [...prev, recordedVideoClip]
+                    })
+                }
+            }
+
             const handleLoadedMetadata = () => {
+                console.log('Video metadata loaded, duration:', video.duration)
                 if (isFinite(video.duration) && video.duration > 0) {
                     setDuration(video.duration)
                     setTrimRange({ start: 0, end: video.duration })
                     setIsVideoReady(true)
-
-                    // Add recorded video as a clip in the timeline
-                    if (videoUrl) {
-                        setClips(prev => {
-                            // Check if recorded video already exists
-                            const existingRecordedVideo = prev.find(clip => clip.name === 'Recorded Video')
-                            if (existingRecordedVideo) {
-                                return prev // Don't add duplicate
-                            }
-
-                            const recordedVideoClip = {
-                                id: `recorded-video-${Date.now()}`,
-                                type: 'video' as const,
-                                name: 'Recorded Video',
-                                duration: video.duration,
-                                startTime: 0,
-                                endTime: video.duration,
-                                trackId: 'video-1',
-                                thumbnail: videoUrl, // Use video URL as thumbnail for now
-                                color: '#3b82f6', // Blue color for recorded video
-                                muted: false,
-                                locked: false
-                            }
-                            return [...prev, recordedVideoClip]
-                        })
-                    }
+                    addRecordedVideoClip(video.duration)
+                } else {
+                    console.warn('Video duration is invalid:', video.duration)
                 }
             }
 
@@ -181,6 +190,11 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                     setDuration(video.duration)
                     setTrimRange({ start: 0, end: video.duration })
                     setIsVideoReady(true)
+                    addRecordedVideoClip(video.duration)
+                } else {
+                    // Fallback: Add clip with default duration
+                    console.log('Using fallback duration for recorded video clip')
+                    addRecordedVideoClip(10) // Default 10 seconds
                 }
             }
 
@@ -196,11 +210,13 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                     if (video.readyState >= 1 && isFinite(video.duration) && video.duration > 0) {
                         setDuration(video.duration)
                         setTrimRange({ start: 0, end: video.duration })
+                        addRecordedVideoClip(video.duration)
                     } else {
                         // Even if video isn't fully loaded, show the editor with default values
                         console.log('Forcing video ready despite incomplete load')
                         setDuration(60) // Default duration
                         setTrimRange({ start: 0, end: 60 })
+                        addRecordedVideoClip(60) // Add clip with default duration
                     }
                 }, 2000)
 
