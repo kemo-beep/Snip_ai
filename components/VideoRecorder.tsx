@@ -8,12 +8,14 @@ import { Video, Square, Play, Pause, Upload } from 'lucide-react'
 interface VideoRecorderProps {
     onVideoRecorded: (videoBlob: Blob) => void
     onUpload: (videoBlob: Blob) => Promise<void>
+    onStartRecording?: () => void
     isUploading?: boolean
 }
 
 export default function VideoRecorder({
     onVideoRecorded,
     onUpload,
+    onStartRecording,
     isUploading = false
 }: VideoRecorderProps) {
     const [isRecording, setIsRecording] = useState(false)
@@ -29,38 +31,24 @@ export default function VideoRecorder({
 
     const startRecording = useCallback(async () => {
         try {
-            // Request screen and webcam access
+            console.log('Starting recording...')
+
+            // Request screen access only (simplified to fix 0-byte issue)
             const screenStream = await navigator.mediaDevices.getDisplayMedia({
                 video: {
-                    mediaSource: 'screen',
                     width: { ideal: 1920 },
                     height: { ideal: 1080 }
                 },
                 audio: true
             })
 
-            const webcamStream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: { ideal: 640 },
-                    height: { ideal: 480 }
-                },
-                audio: false
-            })
+            console.log('Screen stream obtained:', screenStream)
 
-            // Combine streams
-            const combinedStream = new MediaStream()
+            // Use screen stream directly (no canvas for now)
+            streamRef.current = screenStream
 
-            // Add screen video and audio
-            screenStream.getVideoTracks().forEach(track => combinedStream.addTrack(track))
-            screenStream.getAudioTracks().forEach(track => combinedStream.addTrack(track))
-
-            // Add webcam video
-            webcamStream.getVideoTracks().forEach(track => combinedStream.addTrack(track))
-
-            streamRef.current = combinedStream
-
-            // Create MediaRecorder
-            const mediaRecorder = new MediaRecorder(combinedStream, {
+            // Create MediaRecorder with screen stream
+            const mediaRecorder = new MediaRecorder(screenStream, {
                 mimeType: 'video/webm;codecs=vp9'
             })
 
@@ -68,21 +56,45 @@ export default function VideoRecorder({
             chunksRef.current = []
 
             mediaRecorder.ondataavailable = (event) => {
+                console.log('MediaRecorder data available:', event.data.size, 'bytes')
                 if (event.data.size > 0) {
                     chunksRef.current.push(event.data)
                 }
             }
 
             mediaRecorder.onstop = () => {
+                console.log('MediaRecorder stopped, total chunks:', chunksRef.current.length)
                 const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' })
+                console.log('Created video blob:', videoBlob.size, 'bytes')
+
+                if (videoBlob.size === 0) {
+                    console.error('Video blob is 0 bytes!')
+                    alert('Recording failed - no data captured. Please try again.')
+                    return
+                }
+
                 const videoUrl = URL.createObjectURL(videoBlob)
                 setRecordedVideo(videoUrl)
                 onVideoRecorded(videoBlob)
             }
 
+            mediaRecorder.onerror = (event) => {
+                console.error('MediaRecorder error:', event)
+                alert('Recording error occurred. Please try again.')
+            }
+
+            mediaRecorder.onstart = () => {
+                console.log('MediaRecorder started successfully')
+            }
+
             mediaRecorder.start(1000) // Collect data every second
             setIsRecording(true)
             setRecordingTime(0)
+
+            // Notify parent component that recording started
+            if (onStartRecording) {
+                onStartRecording()
+            }
 
             // Start timer
             timerRef.current = setInterval(() => {
@@ -93,7 +105,7 @@ export default function VideoRecorder({
             console.error('Error starting recording:', error)
             alert('Failed to start recording. Please check permissions.')
         }
-    }, [onVideoRecorded])
+    }, [onVideoRecorded, isRecording, isPaused, onStartRecording])
 
     const stopRecording = useCallback(() => {
         if (mediaRecorderRef.current && isRecording) {

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Copy, Check, Share2, Download } from 'lucide-react'
+import { Copy, Check, Share2, Download, Video, Edit3 } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface VideoPlayerProps {
@@ -11,13 +11,17 @@ interface VideoPlayerProps {
     shareableLink?: string
     transcript?: string
     title?: string
+    onRecordAgain?: () => void
+    onEditVideo?: () => void
 }
 
 export default function VideoPlayer({
     videoUrl,
     shareableLink,
     transcript,
-    title = "Recorded Video"
+    title = "Recorded Video",
+    onRecordAgain,
+    onEditVideo
 }: VideoPlayerProps) {
     const [isCopied, setIsCopied] = useState(false)
     const [showTranscript, setShowTranscript] = useState(false)
@@ -97,6 +101,28 @@ export default function VideoPlayer({
                             <Download className="h-4 w-4" />
                             Download
                         </Button>
+                        {onEditVideo && (
+                            <Button
+                                onClick={onEditVideo}
+                                variant="default"
+                                size="sm"
+                                className="gap-2 bg-blue-600 hover:bg-blue-700"
+                            >
+                                <Edit3 className="h-4 w-4" />
+                                Edit Video
+                            </Button>
+                        )}
+                        {onRecordAgain && (
+                            <Button
+                                onClick={onRecordAgain}
+                                variant="outline"
+                                size="sm"
+                                className="gap-2"
+                            >
+                                <Video className="h-4 w-4" />
+                                Record Again
+                            </Button>
+                        )}
                     </div>
                 </CardTitle>
             </CardHeader>
