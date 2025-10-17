@@ -1,103 +1,147 @@
-import Image from "next/image";
+'use client'
+
+import { useState } from 'react'
+import VideoRecorder from '@/components/VideoRecorder'
+import VideoPlayer from '@/components/VideoPlayer'
+import SetupInstructions from '@/components/SetupInstructions'
+import { uploadVideo, createShareableLink, isSupabaseConfigured } from '@/lib/supabase'
+import { transcribeVideo } from '@/lib/transcription'
+import { toast } from 'sonner'
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [recordedVideo, setRecordedVideo] = useState<Blob | null>(null)
+  const [videoUrl, setVideoUrl] = useState<string>('')
+  const [shareableLink, setShareableLink] = useState<string>('')
+  const [transcript, setTranscript] = useState<string>('')
+  const [isUploading, setIsUploading] = useState(false)
+  const [isTranscribing, setIsTranscribing] = useState(false)
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  // Check if both Supabase and Gemini are configured
+  const isGeminiConfigured = process.env.NEXT_PUBLIC_GEMINI_API_KEY
+  const isFullyConfigured = isSupabaseConfigured && isGeminiConfigured
+
+  const handleVideoRecorded = (videoBlob: Blob) => {
+    setRecordedVideo(videoBlob)
+    const url = URL.createObjectURL(videoBlob)
+    setVideoUrl(url)
+  }
+
+  const handleUpload = async (videoBlob: Blob) => {
+    setIsUploading(true)
+    try {
+      // Generate unique filename
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const fileName = `recording-${timestamp}.webm`
+
+      // Upload to Supabase
+      const uploadData = await uploadVideo(videoBlob, fileName)
+
+      // Create shareable link
+      const link = await createShareableLink(uploadData.path)
+      setShareableLink(link)
+
+      toast.success('Video uploaded successfully!')
+
+      // Start transcription
+      setIsTranscribing(true)
+      try {
+        const transcription = await transcribeVideo(videoBlob)
+        setTranscript(transcription)
+        toast.success('Transcription completed!')
+      } catch (error) {
+        console.error('Transcription failed:', error)
+        toast.error('Transcription failed, but video was uploaded successfully')
+      } finally {
+        setIsTranscribing(false)
+      }
+
+    } catch (error) {
+      console.error('Upload failed:', error)
+      toast.error('Failed to upload video')
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const resetRecording = () => {
+    setRecordedVideo(null)
+    setVideoUrl('')
+    setShareableLink('')
+    setTranscript('')
+  }
+
+  // Show setup instructions if not fully configured
+  if (!isFullyConfigured) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
+              Supercut.ai Clone
+            </h1>
+            <p className="text-lg text-gray-600 dark:text-gray-400">
+              Record your screen and webcam, then share with AI-powered transcription
+            </p>
+          </div>
+          <SetupInstructions />
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8">
+      <div className="container mx-auto px-4">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
+            Supercut.ai Clone
+          </h1>
+          <p className="text-lg text-gray-600 dark:text-gray-400">
+            Record your screen and webcam, then share with AI-powered transcription
+          </p>
+        </div>
+
+        <div className="space-y-8">
+          {!recordedVideo ? (
+            <VideoRecorder
+              onVideoRecorded={handleVideoRecorded}
+              onUpload={handleUpload}
+              isUploading={isUploading || isTranscribing}
+            />
+          ) : (
+            <div className="space-y-6">
+              <VideoPlayer
+                videoUrl={videoUrl}
+                shareableLink={shareableLink}
+                transcript={transcript}
+                title="Your Recording"
+              />
+
+              <div className="flex justify-center">
+                <button
+                  onClick={resetRecording}
+                  className="px-6 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                >
+                  Record Another Video
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {isTranscribing && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg">
+              <div className="flex items-center gap-3">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                <span className="text-gray-700 dark:text-gray-300">
+                  Transcribing video...
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
-  );
+  )
 }
