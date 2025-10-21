@@ -20,8 +20,7 @@ import {
     Clock,
     Scissors
 } from 'lucide-react'
-import BottomTimeline from './BottomTimeline'
-import AdvancedTimeline from './AdvancedTimeline'
+import MultiTrackTimeline from './MultiTrackTimeline'
 import RightSidebar from './RightSidebar'
 // import { trimVideo, addTextOverlay, convertToMP4, separateVideoStreams, overlayVideo } from '@/lib/videoProcessor'
 
@@ -64,7 +63,6 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
     const [aspectRatio, setAspectRatio] = useState('16:9')
     const [isDragging, setIsDragging] = useState(false)
     const [hoveredOverlay, setHoveredOverlay] = useState<string | null>(null)
-    const [useAdvancedTimeline, setUseAdvancedTimeline] = useState(true)
     const [clips, setClips] = useState<Array<{
         id: string
         type: 'video' | 'audio' | 'effect'
@@ -101,6 +99,24 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
         setClips(prev => prev.map(clip =>
             clip.id === clipId ? { ...clip, ...updates } : clip
         ))
+    }
+
+    const handleDeleteClip = (clipId: string) => {
+        setClips(prev => prev.filter(clip => clip.id !== clipId))
+    }
+
+    const handleDuplicateClip = (clipId: string) => {
+        const clip = clips.find(c => c.id === clipId)
+        if (clip) {
+            const newClip = {
+                ...clip,
+                id: `${clip.id}-copy-${Date.now()}`,
+                name: `${clip.name} (Copy)`,
+                startTime: clip.endTime, // Place after original
+                endTime: clip.endTime + (clip.endTime - clip.startTime)
+            }
+            setClips(prev => [...prev, newClip])
+        }
     }
 
     const clearClips = () => {
@@ -570,15 +586,6 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                         <Button
                             variant="ghost"
                             size="sm"
-                            className="text-gray-400 hover:text-white h-7 w-7 p-0"
-                            onClick={() => setUseAdvancedTimeline(!useAdvancedTimeline)}
-                            title={useAdvancedTimeline ? "Switch to simple timeline" : "Switch to advanced timeline"}
-                        >
-                            <Clock className="h-3 w-3" />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
                             className="text-gray-400 hover:text-white h-7 px-2"
                             onClick={() => {
                                 console.log('Debug: Force video ready')
@@ -782,41 +789,24 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
             </div>
 
             {/* Bottom Timeline */}
-            <div className="flex-shrink-0">
-                {useAdvancedTimeline ? (
-                    <AdvancedTimeline
-                        isPlaying={isPlaying}
-                        currentTime={currentTime}
-                        duration={duration}
-                        onPlayPause={togglePlayPause}
-                        onSeek={seekTo}
-                        onRewind={handleRewind}
-                        onFastForward={handleFastForward}
-                        isVideoReady={isVideoReady}
-                        aspectRatio={aspectRatio}
-                        onCrop={handleCrop}
-                        onAspectRatioChange={setAspectRatio}
-                        clips={clips}
-                        onUpdateClip={handleUpdateClip}
-                    />
-                ) : (
-                    <BottomTimeline
-                        isPlaying={isPlaying}
-                        currentTime={currentTime}
-                        duration={duration}
-                        trimRange={trimRange}
-                        onPlayPause={togglePlayPause}
-                        onSeek={seekTo}
-                        onTrimStartChange={handleTrimStartChange}
-                        onTrimEndChange={handleTrimEndChange}
-                        onRewind={handleRewind}
-                        onFastForward={handleFastForward}
-                        onCrop={handleCrop}
-                        onAspectRatioChange={setAspectRatio}
-                        isVideoReady={isVideoReady}
-                        aspectRatio={aspectRatio}
-                    />
-                )}
+            <div className="flex-shrink-0" style={{ height: "220px" }}>
+                <MultiTrackTimeline
+                    isPlaying={isPlaying}
+                    currentTime={currentTime}
+                    duration={duration}
+                    onPlayPause={togglePlayPause}
+                    onSeek={seekTo}
+                    onRewind={handleRewind}
+                    onFastForward={handleFastForward}
+                    isVideoReady={isVideoReady}
+                    aspectRatio={aspectRatio}
+                    onCrop={handleCrop}
+                    onAspectRatioChange={setAspectRatio}
+                    clips={clips}
+                    onUpdateClip={handleUpdateClip}
+                    onDeleteClip={handleDeleteClip}
+                    onDuplicateClip={handleDuplicateClip}
+                />
             </div>
 
             {/* Hidden canvas for video processing */}
