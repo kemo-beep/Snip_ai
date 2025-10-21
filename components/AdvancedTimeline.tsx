@@ -122,6 +122,20 @@ export default function AdvancedTimeline({
     const [isMultiSelecting, setIsMultiSelecting] = useState(false)
     const [selectionBox, setSelectionBox] = useState<{ start: { x: number; y: number }; end: { x: number; y: number } } | null>(null)
     const [clipPreview, setClipPreview] = useState<{ clipId: string; time: number } | null>(null)
+
+    // Enhanced scrolling and interaction state
+    const [isScrolling, setIsScrolling] = useState(false)
+    const [scrollVelocity, setScrollVelocity] = useState(0)
+    const [lastScrollTime, setLastScrollTime] = useState(0)
+    const [isPlayheadDragging, setIsPlayheadDragging] = useState(false)
+    const [isTimelineDragging, setIsTimelineDragging] = useState(false)
+    const [dragStart, setDragStart] = useState<{ x: number; time: number } | null>(null)
+    const [isZooming, setIsZooming] = useState(false)
+    const [zoomCenter, setZoomCenter] = useState(0)
+    const [momentumScroll, setMomentumScroll] = useState(0)
+    const [lastPanPosition, setLastPanPosition] = useState(0)
+    const [panHistory, setPanHistory] = useState<number[]>([])
+
     // Create tracks from clips
     const tracks: Track[] = [
         {
@@ -190,31 +204,119 @@ export default function AdvancedTimeline({
         return `${mins}:${secs.toString().padStart(2, '0')}:${frames.toString().padStart(2, '0')}`
     }
 
-    // Handle zoom
-    const handleZoom = useCallback((delta: number) => {
-        setZoom(prev => Math.max(0.1, Math.min(10, prev + delta * 0.1)))
-    }, [])
+    // Enhanced zoom with smooth animation and center point
+    const handleZoom = useCallback((delta: number, centerX?: number) => {
+        const newZoom = Math.max(0.1, Math.min(10, zoom + delta * 0.1))
+        const zoomFactor = newZoom / zoom
 
-    // Handle pan
-    const handlePan = useCallback((delta: number) => {
-        setPan(prev => Math.max(0, Math.min((duration * pixelsPerSecond) - timelineWidth, prev + delta)))
-    }, [duration, pixelsPerSecond, timelineWidth])
+        // Calculate zoom center (mouse position or timeline center)
+        const center = centerX !== undefined ? centerX : timelineWidth / 2
+        const centerTime = (center / pixelsPerSecond) + visibleStart
 
-    // Handle playhead dragging
+        // Adjust pan to keep the zoom center in place
+        const newPixelsPerSecond = (timelineWidth * newZoom) / Math.max(duration, 1)
+        const newPan = Math.max(0, Math.min(
+            (duration * newPixelsPerSecond) - timelineWidth,
+            (centerTime * newPixelsPerSecond) - center
+        ))
+
+        setZoom(newZoom)
+        setPan(newPan)
+        setIsZooming(true)
+
+        // Reset zooming state after animation
+        setTimeout(() => setIsZooming(false), 200)
+    }, [zoom, duration, pixelsPerSecond, timelineWidth, visibleStart])
+
+    // Enhanced pan with momentum scrolling
+    const handlePan = useCallback((delta: number, withMomentum = false) => {
+        const newPan = Math.max(0, Math.min((duration * pixelsPerSecond) - timelineWidth, pan + delta))
+
+        if (withMomentum) {
+            // Track pan history for momentum calculation
+            const now = Date.now()
+            const timeDelta = now - lastScrollTime
+            const velocity = timeDelta > 0 ? delta / timeDelta : 0
+
+            setScrollVelocity(velocity)
+            setLastScrollTime(now)
+            setPanHistory(prev => [...prev.slice(-10), newPan])
+        }
+
+        setPan(newPan)
+        setLastPanPosition(newPan)
+    }, [pan, duration, pixelsPerSecond, timelineWidth, lastScrollTime])
+
+    // Momentum scrolling effect
+    useEffect(() => {
+        if (Math.abs(scrollVelocity) > 0.1 && !isTimelineDragging) {
+            const momentum = scrollVelocity * 0.95 // Decay factor
+            const delta = momentum * 16 // 60fps
+
+            if (Math.abs(delta) > 0.1) {
+                handlePan(delta, true)
+                setScrollVelocity(momentum)
+            } else {
+                setScrollVelocity(0)
+            }
+        }
+    }, [scrollVelocity, isTimelineDragging, handlePan])
+
+    // Enhanced playhead dragging with smooth movement and snapping
     const handlePlayheadMouseDown = (e: React.MouseEvent) => {
         if (!isVideoReady) return
+        e.preventDefault()
+        setIsPlayheadDragging(true)
         setIsDragging(true)
 
         const handleMouseMove = (e: MouseEvent) => {
             if (!timelineRef.current) return
             const rect = timelineRef.current.getBoundingClientRect()
             const x = e.clientX - rect.left
-            const time = (x / pixelsPerSecond) + visibleStart
-            onSeek(Math.max(0, Math.min(duration, time)))
+            let time = (x / pixelsPerSecond) + visibleStart
+
+            // Apply snapping if enabled
+            if (isSnapping) {
+                const snapInterval = 1 / 30 // 30fps snap
+                time = Math.round(time / snapInterval) * snapInterval
+            }
+
+            const clampedTime = Math.max(0, Math.min(duration, time))
+            onSeek(clampedTime)
         }
 
         const handleMouseUp = () => {
+            setIsPlayheadDragging(false)
             setIsDragging(false)
+            document.removeEventListener('mousemove', handleMouseMove)
+            document.removeEventListener('mouseup', handleMouseUp)
+        }
+
+        document.addEventListener('mousemove', handleMouseMove)
+        document.addEventListener('mouseup', handleMouseUp)
+    }
+
+    // Enhanced timeline dragging for panning
+    const handleTimelineMouseDown = (e: React.MouseEvent) => {
+        if (e.target !== e.currentTarget) return
+        e.preventDefault()
+        setIsTimelineDragging(true)
+        setDragStart({ x: e.clientX, time: currentTime })
+
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!dragStart) return
+            const deltaX = e.clientX - dragStart.x
+            const deltaTime = -deltaX / pixelsPerSecond
+            const newPan = Math.max(0, Math.min(
+                (duration * pixelsPerSecond) - timelineWidth,
+                pan + deltaX
+            ))
+            setPan(newPan)
+        }
+
+        const handleMouseUp = () => {
+            setIsTimelineDragging(false)
+            setDragStart(null)
             document.removeEventListener('mousemove', handleMouseMove)
             document.removeEventListener('mouseup', handleMouseUp)
         }
@@ -411,8 +513,65 @@ export default function AdvancedTimeline({
         console.log('Right-click on clip:', clipId)
     }
 
-    // Keyboard shortcuts for clip operations
+    // Enhanced keyboard shortcuts for timeline navigation and clip operations
     const handleKeyDown = (e: KeyboardEvent) => {
+        // Timeline navigation shortcuts (work even without selected clips)
+        switch (e.key) {
+            case 'ArrowLeft':
+                e.preventDefault()
+                if (e.shiftKey) {
+                    // Shift + Left: Move playhead by 1 second
+                    onSeek(Math.max(0, currentTime - 1))
+                } else if (e.ctrlKey || e.metaKey) {
+                    // Ctrl/Cmd + Left: Move playhead by 10 seconds
+                    onSeek(Math.max(0, currentTime - 10))
+                } else {
+                    // Left: Move playhead by 1 frame
+                    onSeek(Math.max(0, currentTime - (1 / 30)))
+                }
+                break
+            case 'ArrowRight':
+                e.preventDefault()
+                if (e.shiftKey) {
+                    // Shift + Right: Move playhead by 1 second
+                    onSeek(Math.min(duration, currentTime + 1))
+                } else if (e.ctrlKey || e.metaKey) {
+                    // Ctrl/Cmd + Right: Move playhead by 10 seconds
+                    onSeek(Math.min(duration, currentTime + 10))
+                } else {
+                    // Right: Move playhead by 1 frame
+                    onSeek(Math.min(duration, currentTime + (1 / 30)))
+                }
+                break
+            case 'Home':
+                e.preventDefault()
+                onSeek(0)
+                break
+            case 'End':
+                e.preventDefault()
+                onSeek(duration)
+                break
+            case ' ':
+                e.preventDefault()
+                onPlayPause()
+                break
+            case '=':
+            case '+':
+                e.preventDefault()
+                handleZoom(0.1)
+                break
+            case '-':
+                e.preventDefault()
+                handleZoom(-0.1)
+                break
+            case '0':
+                e.preventDefault()
+                setZoom(1)
+                setPan(0)
+                break
+        }
+
+        // Clip operations (only if clips are selected)
         if (selectedClips.length === 0) return
 
         switch (e.key) {
@@ -447,6 +606,55 @@ export default function AdvancedTimeline({
                 // Deselect all clips
                 setSelectedClips([])
                 break
+            case 'ArrowLeft':
+                if (e.altKey) {
+                    // Alt + Left: Move selected clips left by 1 frame
+                    selectedClips.forEach(clipId => {
+                        const clip = tracks.flatMap(track => track.clips).find(c => c.id === clipId)
+                        if (clip) {
+                            const newStartTime = Math.max(0, clip.startTime - (1 / 30))
+                            const duration = clip.endTime - clip.startTime
+                            onUpdateClip(clipId, {
+                                startTime: newStartTime,
+                                endTime: newStartTime + duration
+                            })
+                        }
+                    })
+                }
+                break
+            case 'ArrowRight':
+                if (e.altKey) {
+                    // Alt + Right: Move selected clips right by 1 frame
+                    selectedClips.forEach(clipId => {
+                        const clip = tracks.flatMap(track => track.clips).find(c => c.id === clipId)
+                        if (clip) {
+                            const clipDuration = clip.endTime - clip.startTime
+                            const newStartTime = Math.min(duration - clipDuration, clip.startTime + (1 / 30))
+                            onUpdateClip(clipId, {
+                                startTime: newStartTime,
+                                endTime: newStartTime + clipDuration
+                            })
+                        }
+                    })
+                }
+                break
+        }
+    }
+
+    // Enhanced wheel zoom and scroll
+    const handleWheel = (e: React.WheelEvent) => {
+        e.preventDefault()
+
+        if (e.ctrlKey || e.metaKey) {
+            // Zoom with Ctrl/Cmd + wheel
+            const rect = e.currentTarget.getBoundingClientRect()
+            const centerX = e.clientX - rect.left
+            const delta = e.deltaY > 0 ? -0.1 : 0.1
+            handleZoom(delta, centerX)
+        } else {
+            // Pan with wheel
+            const delta = e.deltaY * 2
+            handlePan(delta, true)
         }
     }
 
@@ -463,6 +671,26 @@ export default function AdvancedTimeline({
             setSelectedClips([])
         }
     }
+
+    // Auto-follow playhead (smooth scrolling to keep playhead in view)
+    useEffect(() => {
+        if (isPlaying && !isPlayheadDragging && !isTimelineDragging) {
+            const playheadPosition = (currentTime - visibleStart) * pixelsPerSecond
+            const timelineCenter = timelineWidth / 2
+
+            // If playhead is near the edges, smoothly pan to keep it centered
+            if (playheadPosition < timelineCenter * 0.3) {
+                const targetPan = Math.max(0, (currentTime * pixelsPerSecond) - timelineCenter * 0.7)
+                setPan(prev => prev + (targetPan - prev) * 0.1)
+            } else if (playheadPosition > timelineCenter * 1.7) {
+                const targetPan = Math.min(
+                    (duration * pixelsPerSecond) - timelineWidth,
+                    (currentTime * pixelsPerSecond) - timelineCenter * 1.3
+                )
+                setPan(prev => prev + (targetPan - prev) * 0.1)
+            }
+        }
+    }, [currentTime, isPlaying, isPlayheadDragging, isTimelineDragging, visibleStart, pixelsPerSecond, timelineWidth, duration])
 
     // Add keyboard event listener
     useEffect(() => {
@@ -619,10 +847,19 @@ export default function AdvancedTimeline({
             <div className="relative overflow-hidden" style={{ height: '200px' }}>
                 <div
                     ref={timelineRef}
-                    className="relative h-full cursor-pointer"
-                    style={{ width: `${timelineWidth}px` }}
+                    className={`relative h-full transition-all duration-200 ${isTimelineDragging ? 'cursor-grabbing' :
+                        isPlayheadDragging ? 'cursor-grabbing' :
+                            'cursor-grab'
+                        } ${isZooming ? 'scale-105' : 'scale-100'}`}
+                    style={{
+                        width: `${timelineWidth}px`,
+                        transform: `translateX(-${pan}px)`,
+                        transition: isTimelineDragging || isPlayheadDragging ? 'none' : 'transform 0.1s ease-out'
+                    }}
                     onClick={handleTimelineClick}
                     onContextMenu={handleTimelineRightClick}
+                    onMouseDown={handleTimelineMouseDown}
+                    onWheel={handleWheel}
                 >
                     {/* Time Ruler */}
                     <div className="absolute top-0 left-0 right-0 h-8 bg-gray-700 border-b border-gray-600">
@@ -649,10 +886,30 @@ export default function AdvancedTimeline({
                             </div>
                         ))}
 
-                        {/* Current time indicator */}
+                        {/* Enhanced playhead with smooth movement and visual feedback */}
                         <div
-                            className="absolute top-0 h-full w-px bg-red-500 z-20"
-                            style={{ left: `${playheadPosition}px` }}
+                            className={`absolute top-0 h-full w-px z-30 transition-all duration-100 ${isPlayheadDragging ? 'bg-yellow-400 shadow-lg shadow-yellow-400/50' :
+                                'bg-red-500 shadow-md shadow-red-500/30'
+                                }`}
+                            style={{
+                                left: `${playheadPosition}px`,
+                                transform: isPlayheadDragging ? 'scaleX(2)' : 'scaleX(1)',
+                                boxShadow: isPlayheadDragging ?
+                                    '0 0 10px rgba(251, 191, 36, 0.6), 0 0 20px rgba(251, 191, 36, 0.3)' :
+                                    '0 0 5px rgba(239, 68, 68, 0.4)'
+                            }}
+                            onMouseDown={handlePlayheadMouseDown}
+                        />
+
+                        {/* Playhead handle for easier dragging */}
+                        <div
+                            className={`absolute top-0 w-3 h-8 -ml-1.5 cursor-grab active:cursor-grabbing transition-all duration-200 ${isPlayheadDragging ? 'bg-yellow-400' : 'bg-red-500 hover:bg-red-400'
+                                } rounded-sm shadow-lg`}
+                            style={{
+                                left: `${playheadPosition}px`,
+                                transform: isPlayheadDragging ? 'scale(1.2)' : 'scale(1)'
+                            }}
+                            onMouseDown={handlePlayheadMouseDown}
                         />
                     </div>
 
@@ -733,20 +990,20 @@ export default function AdvancedTimeline({
                                                     : isHovered
                                                         ? 'ring-1 ring-blue-300 shadow-md z-10'
                                                         : 'hover:shadow-sm z-0'
-                                                    } ${isResizingClip ? 'ring-2 ring-yellow-400' : ''
-                                                    } ${isPreview ? 'opacity-80' : ''
-                                                    }`}
+                                                    } ${isResizingClip ? 'ring-2 ring-yellow-400' : ''} ${isPreview ? 'opacity-80' : ''
+                                                    } ${isDragging && isSelected ? 'scale-105' : 'scale-100'}`}
                                                 style={{
                                                     left: `${(clip.startTime - visibleStart) * pixelsPerSecond}px`,
                                                     width: `${(clip.endTime - clip.startTime) * pixelsPerSecond}px`,
                                                     backgroundColor: clip.color,
                                                     minWidth: '20px', // Ensure minimum width for visibility
-                                                    transform: isDragging && isSelected ? 'scale(1.02)' : 'scale(1)',
+                                                    transform: isDragging && isSelected ? 'scale(1.05) rotate(1deg)' : 'scale(1) rotate(0deg)',
                                                     boxShadow: isSelected
-                                                        ? '0 4px 12px rgba(59, 130, 246, 0.3)'
+                                                        ? '0 8px 25px rgba(59, 130, 246, 0.4), 0 4px 12px rgba(59, 130, 246, 0.2)'
                                                         : isHovered
-                                                            ? '0 2px 8px rgba(0, 0, 0, 0.2)'
-                                                            : '0 1px 3px rgba(0, 0, 0, 0.1)'
+                                                            ? '0 4px 15px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.1)'
+                                                            : '0 2px 8px rgba(0, 0, 0, 0.15)',
+                                                    transition: isDragging ? 'none' : 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
                                                 }}
                                                 onMouseDown={(e) => handleClipMouseDown(e, clip.id)}
                                                 onClick={(e) => handleClipClick(e, clip.id)}
