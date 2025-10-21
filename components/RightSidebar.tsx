@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Input } from '@/components/ui/input'
@@ -18,9 +18,26 @@ import {
     Palette,
     Crop,
     Settings,
-    FolderOpen
+    FolderOpen,
+    Loader2
 } from 'lucide-react'
 import ClipManager from './ClipManager'
+
+interface PexelsPhoto {
+    id: number
+    src: {
+        original: string
+        large2x: string
+        large: string
+        medium: string
+        small: string
+        portrait: string
+        landscape: string
+        tiny: string
+    }
+    photographer: string
+    photographer_url: string
+}
 
 interface Clip {
     id: string
@@ -57,6 +74,7 @@ interface RightSidebarProps {
     backgroundSettings: {
         type: 'wallpaper' | 'gradient' | 'color' | 'image'
         wallpaperIndex: number
+        wallpaperUrl?: string
         blurAmount: number
         padding: number
         borderRadius: number
@@ -95,6 +113,9 @@ export default function RightSidebar({
     const [activeTab, setActiveTab] = useState('background')
     const [showAddOverlay, setShowAddOverlay] = useState(false)
     const [selectedBackgroundTab, setSelectedBackgroundTab] = useState<'wallpaper' | 'gradient' | 'color' | 'image'>(backgroundSettings.type)
+    const [pexelsPhotos, setPexelsPhotos] = useState<PexelsPhoto[]>([])
+    const [isLoadingPhotos, setIsLoadingPhotos] = useState(false)
+    const [photosError, setPhotosError] = useState<string | null>(null)
     const [newOverlay, setNewOverlay] = useState({
         type: 'text' as 'text' | 'image',
         content: '',
@@ -105,6 +126,34 @@ export default function RightSidebar({
         startTime: 0,
         endTime: 5
     })
+
+    // Fetch Pexels photos when wallpaper tab is selected
+    useEffect(() => {
+        if (selectedBackgroundTab === 'wallpaper' && pexelsPhotos.length === 0) {
+            fetchPexelsPhotos()
+        }
+    }, [selectedBackgroundTab])
+
+    const fetchPexelsPhotos = async () => {
+        setIsLoadingPhotos(true)
+        setPhotosError(null)
+
+        try {
+            const response = await fetch('/api/pexels?query=landscape&per_page=30')
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch photos')
+            }
+
+            const data = await response.json()
+            setPexelsPhotos(data.photos || [])
+        } catch (error) {
+            console.error('Error fetching Pexels photos:', error)
+            setPhotosError('Failed to load wallpapers')
+        } finally {
+            setIsLoadingPhotos(false)
+        }
+    }
 
     const tabs = [
         { id: 'media', icon: FolderOpen, label: 'Media' },
@@ -164,32 +213,61 @@ export default function RightSidebar({
                         <h3 className="font-medium text-sm">Wallpaper</h3>
                     </div>
 
-                    {/* Wallpaper Grid */}
-                    <div className="grid grid-cols-4 gap-1">
-                        {Array.from({ length: 15 }, (_, i) => (
-                            <div
-                                key={i}
-                                onClick={() => onBackgroundChange({ ...backgroundSettings, type: 'wallpaper', wallpaperIndex: i })}
-                                className={`aspect-square rounded cursor-pointer border transition-all duration-200 group ${backgroundSettings.type === 'wallpaper' && backgroundSettings.wallpaperIndex === i
-                                    ? 'border-purple-500 scale-105 shadow-lg'
-                                    : 'border-transparent hover:border-purple-300 hover:scale-105 hover:shadow-md'
-                                    }`}
-                                style={{
-                                    background: `linear-gradient(45deg, 
-                        hsl(${i * 24}, 70%, 60%), 
-                        hsl(${i * 24 + 120}, 70%, 60%), 
-                        hsl(${i * 24 + 240}, 70%, 60%)
-                      )`
-                                }}
-                            >
-                                {/* <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all duration-200 rounded"></div> */}
-                            </div>
-                        ))}
-                    </div>
+                    {/* Loading State */}
+                    {isLoadingPhotos && (
+                        <div className="flex items-center justify-center py-8">
+                            <Loader2 className="h-6 w-6 animate-spin text-purple-400" />
+                        </div>
+                    )}
 
-                    <p className="text-xs text-gray-500 mt-2">
-                        Background gradients were created by <a href="#" className="underline">raycast.com</a>
-                    </p>
+                    {/* Error State */}
+                    {photosError && (
+                        <div className="text-center py-4">
+                            <p className="text-xs text-red-400 mb-2">{photosError}</p>
+                            <Button
+                                onClick={fetchPexelsPhotos}
+                                size="sm"
+                                variant="outline"
+                                className="text-xs"
+                            >
+                                Retry
+                            </Button>
+                        </div>
+                    )}
+
+                    {/* Wallpaper Grid */}
+                    {!isLoadingPhotos && !photosError && (
+                        <>
+                            <div className="grid grid-cols-3 gap-1 max-h-96 overflow-y-auto">
+                                {pexelsPhotos.map((photo) => (
+                                    <div
+                                        key={photo.id}
+                                        onClick={() => onBackgroundChange({
+                                            ...backgroundSettings,
+                                            type: 'wallpaper',
+                                            wallpaperIndex: photo.id,
+                                            wallpaperUrl: photo.src.large
+                                        })}
+                                        className={`aspect-square rounded cursor-pointer border transition-all duration-200 group overflow-hidden ${backgroundSettings.type === 'wallpaper' && backgroundSettings.wallpaperIndex === photo.id
+                                            ? 'border-purple-500 scale-105 shadow-lg ring-2 ring-purple-500'
+                                            : 'border-transparent hover:border-purple-300 hover:scale-105 hover:shadow-md'
+                                            }`}
+                                    >
+                                        <img
+                                            src={photo.src.tiny}
+                                            alt={`Photo by ${photo.photographer}`}
+                                            className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-110"
+                                            loading="lazy"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+
+                            <p className="text-xs text-gray-500 mt-2">
+                                Photos provided by <a href="https://www.pexels.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-400">Pexels</a>
+                            </p>
+                        </>
+                    )}
                 </div>
             )}
 

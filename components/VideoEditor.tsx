@@ -80,6 +80,7 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
     const [backgroundSettings, setBackgroundSettings] = useState({
         type: 'wallpaper' as 'wallpaper' | 'gradient' | 'color' | 'image',
         wallpaperIndex: 0,
+        wallpaperUrl: '',
         blurAmount: 0,
         padding: 3,
         borderRadius: 12,
@@ -497,18 +498,27 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
     }
 
     const getBackgroundStyle = () => {
-        const { type, wallpaperIndex, blurAmount, padding, backgroundColor, gradientColors } = backgroundSettings
+        const { type, wallpaperIndex, wallpaperUrl, blurAmount, padding, backgroundColor, gradientColors } = backgroundSettings
 
         let backgroundStyle = {}
 
         switch (type) {
             case 'wallpaper':
-                backgroundStyle = {
-                    background: `linear-gradient(45deg, 
-                        hsl(${wallpaperIndex * 24}, 70%, 60%), 
-                        hsl(${wallpaperIndex * 24 + 120}, 70%, 60%), 
-                        hsl(${wallpaperIndex * 24 + 240}, 70%, 60%)
-                    )`
+                if (wallpaperUrl) {
+                    backgroundStyle = {
+                        backgroundImage: `url(${wallpaperUrl})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center'
+                    }
+                } else {
+                    // Fallback to gradient if no URL
+                    backgroundStyle = {
+                        background: `linear-gradient(45deg, 
+                            hsl(${wallpaperIndex * 24}, 70%, 60%), 
+                            hsl(${wallpaperIndex * 24 + 120}, 70%, 60%), 
+                            hsl(${wallpaperIndex * 24 + 240}, 70%, 60%)
+                        )`
+                    }
                 }
                 break
             case 'gradient':
