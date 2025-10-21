@@ -498,9 +498,9 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
     }
 
     const getBackgroundStyle = () => {
-        const { type, wallpaperIndex, wallpaperUrl, blurAmount, padding, backgroundColor, gradientColors } = backgroundSettings
+        const { type, wallpaperIndex, wallpaperUrl, blurAmount, backgroundColor, gradientColors } = backgroundSettings
 
-        let backgroundStyle = {}
+        let backgroundStyle: React.CSSProperties = {}
 
         switch (type) {
             case 'wallpaper':
@@ -539,10 +539,12 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                 break
         }
 
-        return {
-            ...backgroundStyle,
-            filter: blurAmount > 0 ? `blur(${blurAmount * 0.1}px)` : 'none'
+        // Apply blur only to the background layer
+        if (blurAmount > 0) {
+            backgroundStyle.filter = `blur(${blurAmount * 0.1}px)`
         }
+
+        return backgroundStyle
     }
 
     // Keyboard shortcuts
@@ -665,10 +667,9 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                 {/* Video Preview - Left Side */}
                 <div className="flex-1 bg-gray-900 flex items-center justify-center min-h-0 p-4">
                     <div
-                        className={`relative bg-black overflow-hidden shadow-2xl border border-gray-700 transition-all duration-300 ${isDragging ? 'scale-105 shadow-3xl' : 'hover:shadow-3xl'
+                        className={`relative overflow-hidden shadow-2xl border border-gray-700 transition-all duration-300 ${isDragging ? 'scale-105 shadow-3xl' : 'hover:shadow-3xl'
                             }`}
                         style={{
-                            ...getBackgroundStyle(),
                             aspectRatio: aspectRatio === '16:9' ? '16/9' :
                                 aspectRatio === '4:3' ? '4/3' :
                                     aspectRatio === '1:1' ? '1/1' :
@@ -683,6 +684,16 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                             borderRadius: `${backgroundSettings.borderRadius}px`
                         }}
                     >
+                        {/* Background Layer with Blur */}
+                        <div
+                            className="absolute inset-0"
+                            style={{
+                                ...getBackgroundStyle(),
+                                borderRadius: `${backgroundSettings.borderRadius}px`
+                            }}
+                        />
+                        
+                        {/* Content Layer (Video) */}
                         <div
                             className="w-full h-full relative"
                             style={{
