@@ -460,82 +460,6 @@ export default function RightSidebar({
                 </div>
             </div>
 
-            {/* Shape Settings */}
-            <div>
-                <div className="flex items-center gap-2 mb-2">
-                    <Square className="h-4 w-4" />
-                    <h3 className="font-medium text-sm">Shape</h3>
-                </div>
-
-                <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="checkbox"
-                            id="padding"
-                            className="rounded"
-                            checked={backgroundSettings.padding > 0}
-                            onChange={(e) => onBackgroundChange({
-                                ...backgroundSettings,
-                                padding: e.target.checked ? 20 : 0
-                            })}
-                        />
-                        <Label htmlFor="padding" className="text-sm">Padding</Label>
-                    </div>
-
-                    {backgroundSettings.padding > 0 && (
-                        <div>
-                            <Label className="text-xs text-gray-400">Padding Amount</Label>
-                            <div className="space-y-1 mt-1">
-                                <Slider
-                                    value={[backgroundSettings.padding]}
-                                    onValueChange={(value) => onBackgroundChange({ ...backgroundSettings, padding: value[0] })}
-                                    max={100}
-                                    step={1}
-                                    className="w-full"
-                                />
-                                <div className="text-xs text-gray-400 text-center">
-                                    {backgroundSettings.padding}%
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Rounded Corners */}
-                    <div>
-                        <Label className="text-xs text-gray-400">Rounded Corners</Label>
-                        <div className="space-y-1 mt-1">
-                            <Slider
-                                value={[backgroundSettings.borderRadius]}
-                                onValueChange={(value) => onBackgroundChange({ ...backgroundSettings, borderRadius: value[0] })}
-                                max={50}
-                                step={1}
-                                className="w-full"
-                            />
-                            <div className="text-xs text-gray-400 text-center">
-                                {backgroundSettings.borderRadius}px
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Shadow */}
-                    <div>
-                        <Label className="text-xs text-gray-400">Shadow</Label>
-                        <div className="space-y-1 mt-1">
-                            <Slider
-                                value={[backgroundSettings.shadowIntensity || 0]}
-                                onValueChange={(value) => onBackgroundChange({ ...backgroundSettings, shadowIntensity: value[0] })}
-                                max={100}
-                                step={1}
-                                className="w-full"
-                            />
-                            <div className="text-xs text-gray-400 text-center">
-                                {backgroundSettings.shadowIntensity || 0}%
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <Button
                 variant="outline"
                 size="sm"
@@ -668,51 +592,179 @@ export default function RightSidebar({
     const renderCameraTab = () => (
         <div className="space-y-4">
             <div>
-                <Label className="text-xs">Position</Label>
-                <div className="grid grid-cols-2 gap-2 mt-1">
+                <div className="flex items-center gap-2 mb-2">
+                    <Video className="h-4 w-4" />
+                    <h3 className="font-medium text-sm">Position</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
                     <div>
-                        <Label className="text-xs">X</Label>
-                        <Slider
-                            value={[webcamOverlayPosition.x]}
-                            onValueChange={(value) => setWebcamOverlayPosition({ ...webcamOverlayPosition, x: value[0] })}
-                            max={1920} // Assuming max width of the screen recording
-                            step={1}
-                        />
+                        <Label className="text-xs text-gray-400">X Position</Label>
+                        <div className="space-y-1 mt-1">
+                            <Slider
+                                value={[webcamOverlayPosition.x]}
+                                onValueChange={(value) => setWebcamOverlayPosition({ ...webcamOverlayPosition, x: value[0] })}
+                                max={1920}
+                                step={1}
+                                className="w-full"
+                            />
+                            <div className="text-xs text-gray-400 text-center">
+                                {webcamOverlayPosition.x}px
+                            </div>
+                        </div>
                     </div>
                     <div>
-                        <Label className="text-xs">Y</Label>
-                        <Slider
-                            value={[webcamOverlayPosition.y]}
-                            onValueChange={(value) => setWebcamOverlayPosition({ ...webcamOverlayPosition, y: value[0] })}
-                            max={1080} // Assuming max height of the screen recording
-                            step={1}
-                        />
+                        <Label className="text-xs text-gray-400">Y Position</Label>
+                        <div className="space-y-1 mt-1">
+                            <Slider
+                                value={[webcamOverlayPosition.y]}
+                                onValueChange={(value) => setWebcamOverlayPosition({ ...webcamOverlayPosition, y: value[0] })}
+                                max={1080}
+                                step={1}
+                                className="w-full"
+                            />
+                            <div className="text-xs text-gray-400 text-center">
+                                {webcamOverlayPosition.y}px
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
+
             <div>
-                <Label className="text-xs">Size</Label>
-                <div className="grid grid-cols-2 gap-2 mt-1">
+                <div className="flex items-center gap-2 mb-2">
+                    <Video className="h-4 w-4" />
+                    <h3 className="font-medium text-sm">Size</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
                     <div>
-                        <Label className="text-xs">Width</Label>
-                        <Slider
-                            value={[webcamOverlaySize.width]}
-                            onValueChange={(value) => setWebcamOverlaySize({ ...webcamOverlaySize, width: value[0] })}
-                            max={1000}
-                            step={1}
-                        />
+                        <Label className="text-xs text-gray-400">Width</Label>
+                        <div className="space-y-1 mt-1">
+                            <Slider
+                                value={[webcamOverlaySize.width]}
+                                onValueChange={(value) => setWebcamOverlaySize({ ...webcamOverlaySize, width: value[0] })}
+                                max={1000}
+                                step={1}
+                                className="w-full"
+                            />
+                            <div className="text-xs text-gray-400 text-center">
+                                {webcamOverlaySize.width}px
+                            </div>
+                        </div>
                     </div>
                     <div>
-                        <Label className="text-xs">Height</Label>
-                        <Slider
-                            value={[webcamOverlaySize.height]}
-                            onValueChange={(value) => setWebcamOverlaySize({ ...webcamOverlaySize, height: value[0] })}
-                            max={1000}
-                            step={1}
-                        />
+                        <Label className="text-xs text-gray-400">Height</Label>
+                        <div className="space-y-1 mt-1">
+                            <Slider
+                                value={[webcamOverlaySize.height]}
+                                onValueChange={(value) => setWebcamOverlaySize({ ...webcamOverlaySize, height: value[0] })}
+                                max={1000}
+                                step={1}
+                                className="w-full"
+                            />
+                            <div className="text-xs text-gray-400 text-center">
+                                {webcamOverlaySize.height}px
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
+
+            {/* Shape Settings */}
+            <div>
+                <div className="flex items-center gap-2 mb-2">
+                    <Square className="h-4 w-4" />
+                    <h3 className="font-medium text-sm">Shape</h3>
+                </div>
+
+                <div className="space-y-3">
+                    {/* Padding */}
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <input
+                                type="checkbox"
+                                id="camera-padding"
+                                className="rounded"
+                                checked={backgroundSettings.padding > 0}
+                                onChange={(e) => onBackgroundChange({
+                                    ...backgroundSettings,
+                                    padding: e.target.checked ? 20 : 0
+                                })}
+                            />
+                            <Label htmlFor="camera-padding" className="text-sm">Enable Padding</Label>
+                        </div>
+
+                        {backgroundSettings.padding > 0 && (
+                            <div>
+                                <Label className="text-xs text-gray-400">Padding Amount</Label>
+                                <div className="space-y-1 mt-1">
+                                    <Slider
+                                        value={[backgroundSettings.padding]}
+                                        onValueChange={(value) => onBackgroundChange({ ...backgroundSettings, padding: value[0] })}
+                                        max={100}
+                                        step={1}
+                                        className="w-full"
+                                    />
+                                    <div className="text-xs text-gray-400 text-center">
+                                        {backgroundSettings.padding}%
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Rounded Corners */}
+                    <div>
+                        <Label className="text-xs text-gray-400">Rounded Corners</Label>
+                        <div className="space-y-1 mt-1">
+                            <Slider
+                                value={[backgroundSettings.borderRadius]}
+                                onValueChange={(value) => onBackgroundChange({ ...backgroundSettings, borderRadius: value[0] })}
+                                max={50}
+                                step={1}
+                                className="w-full"
+                            />
+                            <div className="text-xs text-gray-400 text-center">
+                                {backgroundSettings.borderRadius}px
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Shadow */}
+                    <div>
+                        <Label className="text-xs text-gray-400">Shadow Intensity</Label>
+                        <div className="space-y-1 mt-1">
+                            <Slider
+                                value={[backgroundSettings.shadowIntensity || 0]}
+                                onValueChange={(value) => onBackgroundChange({ ...backgroundSettings, shadowIntensity: value[0] })}
+                                max={100}
+                                step={1}
+                                className="w-full"
+                            />
+                            <div className="text-xs text-gray-400 text-center">
+                                {backgroundSettings.shadowIntensity || 0}%
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <Button
+                variant="outline"
+                size="sm"
+                className="w-full transition-all duration-200 hover:bg-gray-700 hover:scale-105 hover:shadow-md"
+                onClick={() => {
+                    setWebcamOverlayPosition({ x: 20, y: 20 })
+                    setWebcamOverlaySize({ width: 200, height: 150 })
+                    onBackgroundChange({
+                        ...backgroundSettings,
+                        padding: 3,
+                        borderRadius: 12,
+                        shadowIntensity: 0
+                    })
+                }}
+            >
+                Reset Camera Settings
+            </Button>
         </div>
     )
 
