@@ -19,7 +19,8 @@ import {
     Crop,
     Settings,
     FolderOpen,
-    Loader2
+    Loader2,
+    Webcam
 } from 'lucide-react'
 import ClipManager from './ClipManager'
 
@@ -188,7 +189,8 @@ export default function RightSidebar({
         { id: 'media', icon: FolderOpen, label: 'Media' },
         { id: 'background', icon: Square, label: 'Background' },
         { id: 'cursor', icon: MousePointer, label: 'Cursor' },
-        { id: 'camera', icon: Video, label: 'Camera' },
+        { id: 'video', icon: Video, label: 'Video' },
+        { id: 'webcam', icon: Webcam, label: 'Webcam' },
         { id: 'chat', icon: MessageCircle, label: 'Chat' },
         { id: 'audio', icon: Volume2, label: 'Audio' },
         { id: 'link', icon: Link, label: 'Link' },
@@ -589,86 +591,8 @@ export default function RightSidebar({
         </div>
     )
 
-    const renderCameraTab = () => (
+    const renderVideoTab = () => (
         <div className="space-y-4">
-            <div>
-                <div className="flex items-center gap-2 mb-2">
-                    <Video className="h-4 w-4" />
-                    <h3 className="font-medium text-sm">Position</h3>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                    <div>
-                        <Label className="text-xs text-gray-400">X Position</Label>
-                        <div className="space-y-1 mt-1">
-                            <Slider
-                                value={[webcamOverlayPosition.x]}
-                                onValueChange={(value) => setWebcamOverlayPosition({ ...webcamOverlayPosition, x: value[0] })}
-                                max={1920}
-                                step={1}
-                                className="w-full"
-                            />
-                            <div className="text-xs text-gray-400 text-center">
-                                {webcamOverlayPosition.x}px
-                            </div>
-                        </div>
-                    </div>
-                    <div>
-                        <Label className="text-xs text-gray-400">Y Position</Label>
-                        <div className="space-y-1 mt-1">
-                            <Slider
-                                value={[webcamOverlayPosition.y]}
-                                onValueChange={(value) => setWebcamOverlayPosition({ ...webcamOverlayPosition, y: value[0] })}
-                                max={1080}
-                                step={1}
-                                className="w-full"
-                            />
-                            <div className="text-xs text-gray-400 text-center">
-                                {webcamOverlayPosition.y}px
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div>
-                <div className="flex items-center gap-2 mb-2">
-                    <Video className="h-4 w-4" />
-                    <h3 className="font-medium text-sm">Size</h3>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                    <div>
-                        <Label className="text-xs text-gray-400">Width</Label>
-                        <div className="space-y-1 mt-1">
-                            <Slider
-                                value={[webcamOverlaySize.width]}
-                                onValueChange={(value) => setWebcamOverlaySize({ ...webcamOverlaySize, width: value[0] })}
-                                max={1000}
-                                step={1}
-                                className="w-full"
-                            />
-                            <div className="text-xs text-gray-400 text-center">
-                                {webcamOverlaySize.width}px
-                            </div>
-                        </div>
-                    </div>
-                    <div>
-                        <Label className="text-xs text-gray-400">Height</Label>
-                        <div className="space-y-1 mt-1">
-                            <Slider
-                                value={[webcamOverlaySize.height]}
-                                onValueChange={(value) => setWebcamOverlaySize({ ...webcamOverlaySize, height: value[0] })}
-                                max={1000}
-                                step={1}
-                                className="w-full"
-                            />
-                            <div className="text-xs text-gray-400 text-center">
-                                {webcamOverlaySize.height}px
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             {/* Shape Settings */}
             <div>
                 <div className="flex items-center gap-2 mb-2">
@@ -682,7 +606,7 @@ export default function RightSidebar({
                         <div className="flex items-center gap-2 mb-2">
                             <input
                                 type="checkbox"
-                                id="camera-padding"
+                                id="video-padding"
                                 className="rounded"
                                 checked={backgroundSettings.padding > 0}
                                 onChange={(e) => onBackgroundChange({
@@ -690,7 +614,7 @@ export default function RightSidebar({
                                     padding: e.target.checked ? 20 : 0
                                 })}
                             />
-                            <Label htmlFor="camera-padding" className="text-sm">Enable Padding</Label>
+                            <Label htmlFor="video-padding" className="text-sm">Enable Padding</Label>
                         </div>
 
                         {backgroundSettings.padding > 0 && (
@@ -753,8 +677,6 @@ export default function RightSidebar({
                 size="sm"
                 className="w-full transition-all duration-200 hover:bg-gray-700 hover:scale-105 hover:shadow-md"
                 onClick={() => {
-                    setWebcamOverlayPosition({ x: 20, y: 20 })
-                    setWebcamOverlaySize({ width: 200, height: 150 })
                     onBackgroundChange({
                         ...backgroundSettings,
                         padding: 3,
@@ -763,7 +685,101 @@ export default function RightSidebar({
                     })
                 }}
             >
-                Reset Camera Settings
+                Reset Video Settings
+            </Button>
+        </div>
+    )
+
+    const renderWebcamTab = () => (
+        <div className="space-y-4">
+            <div>
+                <div className="flex items-center gap-2 mb-2">
+                    <Webcam className="h-4 w-4" />
+                    <h3 className="font-medium text-sm">Position</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                    <div>
+                        <Label className="text-xs text-gray-400">X Position</Label>
+                        <div className="space-y-1 mt-1">
+                            <Slider
+                                value={[webcamOverlayPosition.x]}
+                                onValueChange={(value) => setWebcamOverlayPosition({ ...webcamOverlayPosition, x: value[0] })}
+                                max={1920}
+                                step={1}
+                                className="w-full"
+                            />
+                            <div className="text-xs text-gray-400 text-center">
+                                {webcamOverlayPosition.x}px
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <Label className="text-xs text-gray-400">Y Position</Label>
+                        <div className="space-y-1 mt-1">
+                            <Slider
+                                value={[webcamOverlayPosition.y]}
+                                onValueChange={(value) => setWebcamOverlayPosition({ ...webcamOverlayPosition, y: value[0] })}
+                                max={1080}
+                                step={1}
+                                className="w-full"
+                            />
+                            <div className="text-xs text-gray-400 text-center">
+                                {webcamOverlayPosition.y}px
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div className="flex items-center gap-2 mb-2">
+                    <Webcam className="h-4 w-4" />
+                    <h3 className="font-medium text-sm">Size</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                    <div>
+                        <Label className="text-xs text-gray-400">Width</Label>
+                        <div className="space-y-1 mt-1">
+                            <Slider
+                                value={[webcamOverlaySize.width]}
+                                onValueChange={(value) => setWebcamOverlaySize({ ...webcamOverlaySize, width: value[0] })}
+                                max={1000}
+                                step={1}
+                                className="w-full"
+                            />
+                            <div className="text-xs text-gray-400 text-center">
+                                {webcamOverlaySize.width}px
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <Label className="text-xs text-gray-400">Height</Label>
+                        <div className="space-y-1 mt-1">
+                            <Slider
+                                value={[webcamOverlaySize.height]}
+                                onValueChange={(value) => setWebcamOverlaySize({ ...webcamOverlaySize, height: value[0] })}
+                                max={1000}
+                                step={1}
+                                className="w-full"
+                            />
+                            <div className="text-xs text-gray-400 text-center">
+                                {webcamOverlaySize.height}px
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <Button
+                variant="outline"
+                size="sm"
+                className="w-full transition-all duration-200 hover:bg-gray-700 hover:scale-105 hover:shadow-md"
+                onClick={() => {
+                    setWebcamOverlayPosition({ x: 20, y: 20 })
+                    setWebcamOverlaySize({ width: 200, height: 150 })
+                }}
+            >
+                Reset Webcam Settings
             </Button>
         </div>
     )
@@ -783,8 +799,10 @@ export default function RightSidebar({
                 return renderBackgroundTab()
             case 'cursor':
                 return <div className="text-sm text-gray-400">Cursor settings coming soon...</div>
-            case 'camera':
-                return renderCameraTab()
+            case 'video':
+                return renderVideoTab()
+            case 'webcam':
+                return renderWebcamTab()
             case 'chat':
                 return renderOverlayTab()
             case 'audio':
