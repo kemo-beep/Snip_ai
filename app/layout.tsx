@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Supercut.ai Clone",
+  title: "Snipai",
   description: "Record your screen and webcam with AI-powered transcription",
 };
 

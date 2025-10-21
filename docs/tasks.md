@@ -1,4 +1,4 @@
-Project: Supercut.ai Clone
+Project: Snipai
 1. Feature List
 Core Features
 

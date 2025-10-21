@@ -1,4 +1,4 @@
-# Supercut.ai Clone - Setup Guide
+# Snipai - Setup Guide
 
 ## Environment Variables
 
