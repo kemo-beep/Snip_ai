@@ -128,7 +128,7 @@ export default function MultiTrackTimeline({
     const timelineContainerRef = useRef<HTMLDivElement>(null)
     const [playheadPosition, setPlayheadPosition] = useState(0)
 
-    const timelineState = useRef<TimelineState>()
+    const timelineState = useRef<TimelineState | null>(null)
 
     const [tracks, setTracks] = useState<Track[]>([
         {
@@ -166,28 +166,21 @@ export default function MultiTrackTimeline({
         },
     ])
 
-    const [editorData, setEditorData] = useState<TimelineRow[]>(() => {
-        return tracks.map((track) => ({
-            id: track.id,
-            actions: clips
-                .filter((clip) => clip.trackId === track.id)
-                .map((clip) => ({
-                    id: clip.id,
-                    start: clip.startTime,
-                    end: clip.endTime,
-                    effectId: `effect-${clip.id}`,
-                    flexible: true,
-                    movable: !track.locked && !clip.locked,
-                    selected: false,
-                })),
-        }))
-    })
+    // Removed editorData state - using timelineData directly
 
     useEffect(() => {
         if (duration > 0) {
             setPlayheadPosition((currentTime / duration) * 100)
         }
     }, [currentTime, duration])
+
+    // Sync timeline cursor with video current time
+    useEffect(() => {
+        if (timelineState.current && isVideoReady) {
+            timelineState.current.setTime(currentTime)
+            timelineState.current.reRender()
+        }
+    }, [currentTime, isVideoReady])
 
     const effectsMap: Record<string, TimelineEffect> = useMemo(() => {
         const effectsMap: Record<string, TimelineEffect> = {}
@@ -203,24 +196,7 @@ export default function MultiTrackTimeline({
         return effectsMap
     }, [clips, tracks])
 
-    useEffect(() => {
-        setEditorData(
-            tracks.map((track) => ({
-                id: track.id,
-                actions: clips
-                    .filter((clip) => clip.trackId === track.id)
-                    .map((clip) => ({
-                        id: clip.id,
-                        start: clip.startTime,
-                        end: clip.endTime,
-                        effectId: `effect-${clip.id}`,
-                        flexible: true,
-                        movable: !track.locked && !clip.locked,
-                        selected: selectedClips.includes(clip.id),
-                    })),
-            })),
-        )
-    }, [clips, tracks, selectedClips])
+    // Removed editorData useEffect - using timelineData directly
 
     const addMarker = useCallback(() => {
         const newMarker: Marker = {
@@ -354,13 +330,36 @@ export default function MultiTrackTimeline({
                     }
                 })
             })
-            setEditorData(data)
+            // Data is handled by timelineData now
         },
         [clips, onUpdateClip],
     )
 
     const handleCursorDrag = useCallback(
         (time: number) => {
+            onSeek(time)
+        },
+        [onSeek],
+    )
+
+    const handleClickTimeArea = useCallback(
+        (time: number, e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
+            onSeek(time)
+            return true // Allow the timeline to set the time
+        },
+        [onSeek],
+    )
+
+    const handleCursorDragStart = useCallback(
+        (time: number) => {
+            setIsDragging(true)
+        },
+        [],
+    )
+
+    const handleCursorDragEnd = useCallback(
+        (time: number) => {
+            setIsDragging(false)
             onSeek(time)
         },
         [onSeek],
@@ -409,28 +408,36 @@ export default function MultiTrackTimeline({
     // Create timeline data with multiple tracks
     const timelineData: TimelineRow[] = useMemo(() => {
         console.log("Creating timeline data with tracks:", tracks, "clips:", clips)
+        console.log("Video duration:", duration)
 
         const rows: TimelineRow[] = tracks.map((track) => {
             const trackClips = clips.filter((clip) => clip.trackId === track.id)
 
             return {
                 id: track.id,
-                actions: trackClips.map((clip) => ({
-                    id: clip.id,
-                    start: clip.startTime,
-                    end: clip.endTime,
-                    effectId: `${track.type}-${clip.id}`,
-                    flexible: true,
-                    movable: !track.locked && !clip.locked,
-                    removable: !track.locked,
-                    selected: selectedClips.includes(clip.id),
-                })),
+                actions: trackClips.map((clip) => {
+                    const action = {
+                        id: clip.id,
+                        start: clip.startTime,
+                        end: clip.endTime,
+                        effectId: `${track.type}-${clip.id}`,
+                        flexible: true, // Allow resizing by default
+                        movable: !track.locked && !clip.locked, // Allow moving unless track or clip is locked
+                        removable: !track.locked, // Allow removal unless track is locked
+                        selected: selectedClips.includes(clip.id),
+                        // Add constraints for better UX
+                        minStart: 0, // Prevent moving before timeline start
+                        maxEnd: duration, // Prevent extending beyond video duration
+                    }
+                    console.log(`Clip ${clip.name}: start=${action.start}, end=${action.end}, duration=${action.end - action.start}`)
+                    return action
+                }),
             }
         })
 
         console.log("Timeline data created:", rows)
         return rows
-    }, [tracks, clips, selectedClips])
+    }, [tracks, clips, selectedClips, duration])
 
     // Handle timeline changes
     const handleTimelineChangeFinal = useCallback(
@@ -474,35 +481,90 @@ export default function MultiTrackTimeline({
     // Handle action move
     const handleActionMovingFinal = useCallback(
         (params: { action: TimelineAction; row: TimelineRow; start: number; end: number }) => {
-            const { start, end } = params
+            const { action, start, end } = params
+
+            // Check if action is movable
+            if (!action.movable) {
+                console.log("Action is not movable:", action.id)
+                return false
+            }
+
+            // Apply constraints
+            const minStart = action.minStart || 0
+            const maxEnd = action.maxEnd || duration
+            const clipDuration = end - start
+
+            // Ensure we don't go below minimum start time
+            if (start < minStart) {
+                params.start = minStart
+                params.end = minStart + clipDuration
+            }
+
+            // Ensure we don't go beyond maximum end time
+            if (end > maxEnd) {
+                params.end = maxEnd
+                params.start = maxEnd - clipDuration
+            }
 
             // Apply snapping if enabled
             if (isSnapping) {
                 const snapInterval = 1 / 30 // 30fps snap
-                params.start = Math.round(start / snapInterval) * snapInterval
-                params.end = Math.round(end / snapInterval) * snapInterval
+                params.start = Math.round(params.start / snapInterval) * snapInterval
+                params.end = Math.round(params.end / snapInterval) * snapInterval
             }
 
+            console.log("Moving action:", action.id, "from", start, "to", params.start, "end:", params.end)
             return true
         },
-        [isSnapping],
+        [isSnapping, duration],
     )
 
     // Handle action resize
     const handleActionResizingFinal = useCallback(
         (params: { action: TimelineAction; row: TimelineRow; start: number; end: number; dir: "right" | "left" }) => {
-            const { start, end } = params
+            const { action, start, end, dir } = params
+
+            // Check if action is flexible
+            if (!action.flexible) {
+                console.log("Action is not flexible:", action.id)
+                return false
+            }
+
+            // Apply constraints
+            const minStart = action.minStart || 0
+            const maxEnd = action.maxEnd || duration
+            const minDuration = 0.1 // Minimum 0.1 seconds
+
+            // Ensure we don't go below minimum start time
+            if (start < minStart) {
+                params.start = minStart
+            }
+
+            // Ensure we don't go beyond maximum end time
+            if (end > maxEnd) {
+                params.end = maxEnd
+            }
+
+            // Ensure minimum duration
+            if (end - start < minDuration) {
+                if (dir === "right") {
+                    params.end = start + minDuration
+                } else {
+                    params.start = end - minDuration
+                }
+            }
 
             // Apply snapping if enabled
             if (isSnapping) {
                 const snapInterval = 1 / 30 // 30fps snap
-                params.start = Math.round(start / snapInterval) * snapInterval
-                params.end = Math.round(end / snapInterval) * snapInterval
+                params.start = Math.round(params.start / snapInterval) * snapInterval
+                params.end = Math.round(params.end / snapInterval) * snapInterval
             }
 
+            console.log("Resizing action:", action.id, "dir:", dir, "start:", params.start, "end:", params.end)
             return true
         },
-        [isSnapping],
+        [isSnapping, duration],
     )
 
     const addTrack = useCallback(
@@ -546,8 +608,12 @@ export default function MultiTrackTimeline({
             if (index === -1) return prev
 
             const newIndex = direction === "up" ? index - 1 : index + 1
-            if (newIndex < 0 || newIndex >= newTracks.length)
-                return (prev[(newTracks[index], newTracks[newIndex])] = [newTracks[newIndex], newTracks[index]])
+            if (newIndex < 0 || newIndex >= newTracks.length) return prev
+
+            // Swap tracks
+            const temp = newTracks[index]
+            newTracks[index] = newTracks[newIndex]
+            newTracks[newIndex] = temp
             return newTracks
         })
     }, [])
@@ -585,10 +651,10 @@ export default function MultiTrackTimeline({
             return (
                 <div
                     className={`h-full flex items-center px-2 relative overflow-hidden rounded-md transition-all duration-150 group ${isSelected
-                            ? "ring-2 ring-blue-400 shadow-lg shadow-blue-500/50 scale-[1.02] z-10"
-                            : isHovered
-                                ? "ring-2 ring-blue-300/60 shadow-md scale-[1.01] z-5"
-                                : "hover:shadow-md hover:scale-[1.005]"
+                        ? "ring-2 ring-blue-400 shadow-lg shadow-blue-500/50 scale-[1.02] z-10"
+                        : isHovered
+                            ? "ring-2 ring-blue-300/60 shadow-md scale-[1.01] z-5"
+                            : "hover:shadow-md hover:scale-[1.005]"
                         } ${isDragging && isSelected ? "scale-105 shadow-xl shadow-blue-500/60" : ""}`}
                     style={{
                         backgroundColor: track.color,
@@ -658,15 +724,27 @@ export default function MultiTrackTimeline({
                                 <Lock className="h-2.5 w-2.5 text-white" />
                             </div>
                         )}
+                        {!track.locked && !clip.locked && (
+                            <div className="w-4 h-4 bg-green-500/90 rounded-sm flex items-center justify-center shadow-sm backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                                <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16l-4-4m0 0l4-4m-4 4h18" />
+                                </svg>
+                            </div>
+                        )}
                     </div>
 
                     {/* Fade handles with gradient */}
                     <div className="absolute left-0 top-0 bottom-0 w-2 bg-gradient-to-r from-black/20 to-transparent pointer-events-none" />
                     <div className="absolute right-0 top-0 bottom-0 w-2 bg-gradient-to-l from-black/20 to-transparent pointer-events-none" />
 
-                    {/* Resize handles - visible on hover */}
-                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400 opacity-0 group-hover:opacity-100 transition-opacity cursor-ew-resize" />
-                    <div className="absolute right-0 top-0 bottom-0 w-1 bg-blue-400 opacity-0 group-hover:opacity-100 transition-opacity cursor-ew-resize" />
+                    {/* Resize handles - visible on hover and only if flexible */}
+                    {/* Note: The timeline library handles resize internally, these are just visual indicators */}
+                    {track.locked === false && clip.locked === false && (
+                        <>
+                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                            <div className="absolute right-0 top-0 bottom-0 w-1 bg-blue-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                        </>
+                    )}
 
                     {/* Selection indicator */}
                     {isSelected && (
@@ -707,8 +785,8 @@ export default function MultiTrackTimeline({
                                 variant="ghost"
                                 size="sm"
                                 className={`h-7 w-7 p-0 transition-all duration-200 ${track.muted
-                                        ? "text-red-400 bg-red-500/10 hover:bg-red-500/20"
-                                        : "text-gray-300 hover:text-white hover:bg-gray-600"
+                                    ? "text-red-400 bg-red-500/10 hover:bg-red-500/20"
+                                    : "text-gray-300 hover:text-white hover:bg-gray-600"
                                     }`}
                                 onClick={() => toggleTrackMute(track.id)}
                                 title={track.muted ? "Unmute track" : "Mute track"}
@@ -719,8 +797,8 @@ export default function MultiTrackTimeline({
                                 variant="ghost"
                                 size="sm"
                                 className={`h-7 w-7 p-0 transition-all duration-200 ${track.solo
-                                        ? "text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20"
-                                        : "text-gray-300 hover:text-white hover:bg-gray-600"
+                                    ? "text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20"
+                                    : "text-gray-300 hover:text-white hover:bg-gray-600"
                                     }`}
                                 onClick={() => toggleTrackSolo(track.id)}
                                 title={track.solo ? "Unsolo track" : "Solo track"}
@@ -731,8 +809,8 @@ export default function MultiTrackTimeline({
                                 variant="ghost"
                                 size="sm"
                                 className={`h-7 w-7 p-0 transition-all duration-200 ${track.locked
-                                        ? "text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20"
-                                        : "text-gray-300 hover:text-white hover:bg-gray-600"
+                                    ? "text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20"
+                                    : "text-gray-300 hover:text-white hover:bg-gray-600"
                                     }`}
                                 onClick={() => toggleTrackLock(track.id)}
                                 title={track.locked ? "Unlock track" : "Lock track"}
@@ -753,7 +831,8 @@ export default function MultiTrackTimeline({
                             <div className="flex flex-col flex-1 min-w-0">
                                 <span className="text-xs text-gray-200 truncate font-medium">{track.name}</span>
                                 <span className="text-[10px] text-gray-500">
-                                    {trackClips.length} {trackClips.length === 1 ? "clip" : "clips"}
+                                    {trackClips.length} {trackClips.length === 1 ? "clip" : "clips"} • {track.height}px
+                                    {track.locked && " • 🔒 Locked"}
                                 </span>
                             </div>
                         </div>
@@ -1172,15 +1251,17 @@ export default function MultiTrackTimeline({
             <div ref={timelineContainerRef} className="flex-1 relative overflow-hidden">
                 <Timeline
                     ref={timelineState}
-                    editorData={editorData}
+                    editorData={timelineData}
                     effects={effectsMap}
                     onChange={handleTimelineChangeFinal}
                     onCursorDrag={handleCursorDrag}
+                    onCursorDragStart={handleCursorDragStart}
+                    onCursorDragEnd={handleCursorDragEnd}
+                    onClickTimeArea={handleClickTimeArea}
                     onClickAction={handleActionClick}
                     onActionMoving={handleActionMovingFinal}
                     onActionResizing={handleActionResizingFinal}
                     getActionRender={getActionRender}
-                    getRowRender={getRowRender}
                     scale={zoom}
                     startLeft={200}
                     autoScroll={true}
@@ -1192,7 +1273,7 @@ export default function MultiTrackTimeline({
                         height: "100%",
                         backgroundColor: "#0a0a0f",
                     }}
-                    rowHeight={60}
+                    rowHeight={tracks.reduce((max, track) => Math.max(max, track.height), 60)}
                 />
 
                 {/* Markers overlay */}
