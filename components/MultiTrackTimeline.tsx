@@ -10,6 +10,7 @@ import {
     type TimelineState,
 } from "@xzdarcy/react-timeline-editor"
 import { Button } from "./ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "./ui/tooltip"
 import {
     Play,
     Pause,
@@ -31,6 +32,10 @@ import {
     ZoomIn,
     ZoomOut,
     Maximize2,
+    Hand,
+    Move,
+    Copy,
+    Slice,
 } from "lucide-react"
 
 interface Clip {
@@ -121,7 +126,7 @@ export default function MultiTrackTimeline({
         start: { x: number; y: number }
         end: { x: number; y: number }
     } | null>(null)
-    const [tool, setTool] = useState<"select" | "razor" | "slip" | "slide">("select")
+    const [tool, setTool] = useState<"select" | "razor" | "slip" | "slide" | "ripple" | "roll" | "hand">("select")
     const [isPanning, setIsPanning] = useState(false)
     const [panStart, setPanStart] = useState({ x: 0, y: 0 })
     const [scrollOffset, setScrollOffset] = useState(0)
@@ -418,8 +423,35 @@ export default function MultiTrackTimeline({
     const handleActionClick = useCallback(
         (e: React.MouseEvent, param: { action: TimelineAction; row: TimelineRow; time: number }) => {
             e.stopPropagation()
-            const { action } = param
+            const { action, time } = param
 
+            // Razor tool: split clip at click position
+            if (tool === "razor") {
+                const clip = clips.find(c => c.id === action.id)
+                if (clip && !clip.locked) {
+                    console.log("[Timeline] Razor tool: splitting clip at", time)
+
+                    // Create two new clips from the split
+                    const leftClip: Clip = {
+                        ...clip,
+                        id: `${clip.id}-left-${Date.now()}`,
+                        endTime: time,
+                    }
+                    const rightClip: Clip = {
+                        ...clip,
+                        id: `${clip.id}-right-${Date.now()}`,
+                        startTime: time,
+                    }
+
+                    // Delete original and add split clips
+                    onDeleteClip(clip.id)
+                    onAddClip(leftClip)
+                    onAddClip(rightClip)
+                }
+                return
+            }
+
+            // Select tool: normal selection behavior
             if (e.ctrlKey || e.metaKey) {
                 setSelectedClips((prev) =>
                     prev.includes(action.id) ? prev.filter((id) => id !== action.id) : [...prev, action.id],
@@ -428,7 +460,7 @@ export default function MultiTrackTimeline({
                 setSelectedClips([action.id])
             }
         },
-        [],
+        [tool, clips, onDeleteClip, onAddClip],
     )
 
     const handleActionMoving = useCallback(
@@ -1058,6 +1090,37 @@ export default function MultiTrackTimeline({
                     setContextMenu(null)
                     setTool("select")
                     break
+                case "v":
+                    if (!e.ctrlKey && !e.metaKey) {
+                        e.preventDefault()
+                        setTool("select")
+                    }
+                    break
+                case "c":
+                    if (!e.ctrlKey && !e.metaKey) {
+                        e.preventDefault()
+                        setTool("razor")
+                    } else {
+                        e.preventDefault()
+                        copySelectedClips()
+                    }
+                    break
+                case "b":
+                    e.preventDefault()
+                    setTool("ripple")
+                    break
+                case "n":
+                    e.preventDefault()
+                    setTool("roll")
+                    break
+                case "y":
+                    e.preventDefault()
+                    setTool("slip")
+                    break
+                case "h":
+                    e.preventDefault()
+                    setTool("hand")
+                    break
                 case "s":
                     if (e.ctrlKey || e.metaKey) {
                         e.preventDefault()
@@ -1067,12 +1130,7 @@ export default function MultiTrackTimeline({
                         splitClipAtPlayhead()
                     }
                     break
-                case "c":
-                    if (e.ctrlKey || e.metaKey) {
-                        e.preventDefault()
-                        copySelectedClips()
-                    }
-                    break
+
                 case "v":
                     if (e.ctrlKey || e.metaKey) {
                         e.preventDefault()
@@ -1221,33 +1279,118 @@ export default function MultiTrackTimeline({
                             {formatTime(currentTime)} <span className="text-gray-600">/</span> {formatTime(duration)}
                         </div>
 
-                        <div className="flex items-center gap-1 border-l border-gray-700 pl-4">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className={`h-7 w-7 p-0 ${tool === "select" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
-                                onClick={() => setTool("select")}
-                                title="Select Tool (V)"
-                            >
-                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"
-                                    />
-                                </svg>
-                            </Button>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className={`h-7 w-7 p-0 ${tool === "razor" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
-                                onClick={() => setTool("razor")}
-                                title="Razor Tool (C)"
-                            >
-                                <Scissors className="h-4 w-4" />
-                            </Button>
-                        </div>
+                        <TooltipProvider delayDuration={300}>
+                            <div className="flex items-center gap-0.5 border-l border-gray-700 pl-4">
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className={`h-7 w-7 p-0 ${tool === "select" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
+                                            onClick={() => setTool("select")}
+                                        >
+                                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                    strokeWidth={2}
+                                                    d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"
+                                                />
+                                            </svg>
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom">
+                                        <p className="font-medium">Select Tool</p>
+                                        <p className="text-xs text-gray-400">Press V • Select and move clips</p>
+                                    </TooltipContent>
+                                </Tooltip>
+
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className={`h-7 w-7 p-0 ${tool === "razor" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
+                                            onClick={() => setTool("razor")}
+                                        >
+                                            <Scissors className="h-4 w-4" />
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom">
+                                        <p className="font-medium">Razor Tool</p>
+                                        <p className="text-xs text-gray-400">Press C • Click to split clips</p>
+                                    </TooltipContent>
+                                </Tooltip>
+
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className={`h-7 w-7 p-0 ${tool === "ripple" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
+                                            onClick={() => setTool("ripple")}
+                                        >
+                                            <Move className="h-4 w-4" />
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom">
+                                        <p className="font-medium">Ripple Edit Tool</p>
+                                        <p className="text-xs text-gray-400">Press B • Shift following clips</p>
+                                    </TooltipContent>
+                                </Tooltip>
+
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className={`h-7 w-7 p-0 ${tool === "roll" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
+                                            onClick={() => setTool("roll")}
+                                        >
+                                            <Slice className="h-4 w-4" />
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom">
+                                        <p className="font-medium">Roll Edit Tool</p>
+                                        <p className="text-xs text-gray-400">Press N • Adjust edit points</p>
+                                    </TooltipContent>
+                                </Tooltip>
+
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className={`h-7 w-7 p-0 ${tool === "slip" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
+                                            onClick={() => setTool("slip")}
+                                        >
+                                            <Copy className="h-4 w-4" />
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom">
+                                        <p className="font-medium">Slip Tool</p>
+                                        <p className="text-xs text-gray-400">Press Y • Change clip content</p>
+                                    </TooltipContent>
+                                </Tooltip>
+
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className={`h-7 w-7 p-0 ${tool === "hand" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"}`}
+                                            onClick={() => setTool("hand")}
+                                        >
+                                            <Hand className="h-4 w-4" />
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom">
+                                        <p className="font-medium">Hand Tool</p>
+                                        <p className="text-xs text-gray-400">Press H • Pan timeline view</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </div>
+                        </TooltipProvider>
                     </div>
 
                     {/* Center - Playback Controls */}
@@ -1287,57 +1430,92 @@ export default function MultiTrackTimeline({
                     {/* Right - Tools and Progress */}
                     <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1 border-r border-gray-700 pr-3">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 text-gray-400 hover:text-white"
-                                onClick={() => setZoom((prev) => Math.max(0.1, prev - 0.2))}
-                                title="Zoom Out (-)"
-                            >
-                                <ZoomOut className="h-4 w-4" />
-                            </Button>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 w-7 p-0 text-gray-400 hover:text-white"
+                                        onClick={() => setZoom((prev) => Math.max(0.1, prev - 0.2))}
+                                    >
+                                        <ZoomOut className="h-4 w-4" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">
+                                    <p>Zoom Out • Press -</p>
+                                </TooltipContent>
+                            </Tooltip>
+
                             <span className="text-xs text-gray-500 font-mono w-12 text-center">{Math.round(zoom * 100)}%</span>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 text-gray-400 hover:text-white"
-                                onClick={() => setZoom((prev) => Math.min(10, prev + 0.2))}
-                                title="Zoom In (+)"
-                            >
-                                <ZoomIn className="h-4 w-4" />
-                            </Button>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 text-gray-400 hover:text-white"
-                                onClick={fitToWindow}
-                                title="Fit to Window (F)"
-                            >
-                                <Maximize2 className="h-4 w-4" />
-                            </Button>
+
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 w-7 p-0 text-gray-400 hover:text-white"
+                                        onClick={() => setZoom((prev) => Math.min(10, prev + 0.2))}
+                                    >
+                                        <ZoomIn className="h-4 w-4" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">
+                                    <p>Zoom In • Press +</p>
+                                </TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 w-7 p-0 text-gray-400 hover:text-white"
+                                        onClick={fitToWindow}
+                                    >
+                                        <Maximize2 className="h-4 w-4" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">
+                                    <p>Fit to Window • Press F</p>
+                                </TooltipContent>
+                            </Tooltip>
                         </div>
 
                         <div className="flex items-center gap-1 border-r border-gray-700 pr-3">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className={`h-7 w-7 p-0 ${isSnapping ? 'text-blue-400 bg-blue-500/10' : 'text-gray-400'} hover:text-white`}
-                                onClick={() => setIsSnapping(!isSnapping)}
-                                title="Toggle Snapping"
-                            >
-                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                                </svg>
-                            </Button>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 text-gray-400 hover:text-white"
-                                onClick={addMarker}
-                                title="Add Marker (M)"
-                            >
-                                <Bookmark className="h-4 w-4" />
-                            </Button>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className={`h-7 w-7 p-0 ${isSnapping ? 'text-blue-400 bg-blue-500/10' : 'text-gray-400'} hover:text-white`}
+                                        onClick={() => setIsSnapping(!isSnapping)}
+                                    >
+                                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                        </svg>
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">
+                                    <p className="font-medium">{isSnapping ? 'Snapping Enabled' : 'Snapping Disabled'}</p>
+                                    <p className="text-xs text-gray-400">Click to toggle • Snaps to frames</p>
+                                </TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 w-7 p-0 text-gray-400 hover:text-white"
+                                        onClick={addMarker}
+                                    >
+                                        <Bookmark className="h-4 w-4" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">
+                                    <p>Add Marker • Press M</p>
+                                </TooltipContent>
+                            </Tooltip>
                         </div>
 
                         <div className="w-32 h-1.5 bg-gray-800 rounded-full overflow-hidden shadow-inner">
@@ -1406,7 +1584,13 @@ export default function MultiTrackTimeline({
                 })}
             </div>
 
-            <div ref={timelineContainerRef} className="flex-1 relative overflow-hidden">
+            <div
+                ref={timelineContainerRef}
+                className="flex-1 relative overflow-hidden"
+                style={{
+                    cursor: tool === "hand" ? "grab" : tool === "razor" ? "crosshair" : "default"
+                }}
+            >
                 <Timeline
                     ref={timelineState}
                     editorData={timelineData}
@@ -1430,6 +1614,7 @@ export default function MultiTrackTimeline({
                     dragLine={true}
                     hideCursor={false}
                     gridSnap={isSnapping}
+                    disableDrag={tool === "razor" || tool === "hand"}
                     style={{
                         width: "100%",
                         height: "100%",
@@ -1455,9 +1640,22 @@ export default function MultiTrackTimeline({
 
             <div className="px-6 py-1 border-t border-gray-800/50 bg-[#0f0f14]/50">
                 <div className="text-[10px] text-gray-600 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3">
                         <span className="flex items-center gap-1">
-                            <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">Space</kbd> Play/Pause
+                            <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">V</kbd> Select
+                        </span>
+                        <span className="flex items-center gap-1">
+                            <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">C</kbd> Razor
+                        </span>
+                        <span className="flex items-center gap-1">
+                            <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">B</kbd> Ripple
+                        </span>
+                        <span className="flex items-center gap-1">
+                            <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">H</kbd> Hand
+                        </span>
+                        <span className="text-gray-700">|</span>
+                        <span className="flex items-center gap-1">
+                            <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">Space</kbd> Play
                         </span>
                         <span className="flex items-center gap-1">
                             <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">S</kbd> Split
@@ -1465,19 +1663,13 @@ export default function MultiTrackTimeline({
                         <span className="flex items-center gap-1">
                             <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">M</kbd> Marker
                         </span>
-                        <span className="flex items-center gap-1">
-                            <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">←→</kbd> Frame
-                        </span>
-                        <span className="flex items-center gap-1">
-                            <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">Del</kbd> Delete
-                        </span>
                     </div>
                     <div className="flex items-center gap-2 text-gray-500">
+                        <span className="text-blue-400">{tool.toUpperCase()}</span>
+                        <span>•</span>
                         <span>{selectedClips.length} selected</span>
                         <span>•</span>
                         <span>{clips.length} clips</span>
-                        <span>•</span>
-                        <span>{tracks.length} tracks</span>
                     </div>
                 </div>
             </div>

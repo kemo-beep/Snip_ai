@@ -84,6 +84,7 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
         blurAmount: 0,
         padding: 3,
         borderRadius: 12,
+        shadowIntensity: 0,
         backgroundColor: '#000000',
         gradientColors: ['#ff6b6b', '#4ecdc4']
     })
@@ -547,6 +548,20 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
         return backgroundStyle
     }
 
+    const getShadowStyle = () => {
+        const { shadowIntensity } = backgroundSettings
+        if (shadowIntensity === 0) return {}
+        
+        // Calculate shadow based on intensity (0-100)
+        const blur = Math.round(shadowIntensity * 0.8) // 0-80px
+        const spread = Math.round(shadowIntensity * 0.2) // 0-20px
+        const opacity = Math.min(shadowIntensity / 100 * 0.5, 0.5) // 0-0.5
+        
+        return {
+            boxShadow: `0 ${Math.round(shadowIntensity * 0.3)}px ${blur}px ${spread}px rgba(0, 0, 0, ${opacity})`
+        }
+    }
+
     // Keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -667,7 +682,7 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                 {/* Video Preview - Left Side */}
                 <div className="flex-1 bg-gray-900 flex items-center justify-center min-h-0 p-4">
                     <div
-                        className={`relative overflow-hidden shadow-2xl border border-gray-700 transition-all duration-300 ${isDragging ? 'scale-105 shadow-3xl' : 'hover:shadow-3xl'
+                        className={`relative overflow-hidden border border-gray-700 transition-all duration-300 ${isDragging ? 'scale-105' : ''
                             }`}
                         style={{
                             aspectRatio: aspectRatio === '16:9' ? '16/9' :
@@ -681,7 +696,8 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                             height: 'fit-content',
                             minWidth: '300px',
                             minHeight: '200px',
-                            borderRadius: `${backgroundSettings.borderRadius}px`
+                            borderRadius: `${backgroundSettings.borderRadius}px`,
+                            ...getShadowStyle()
                         }}
                     >
                         {/* Background Layer with Blur */}

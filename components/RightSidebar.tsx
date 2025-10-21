@@ -78,6 +78,7 @@ interface RightSidebarProps {
         blurAmount: number
         padding: number
         borderRadius: number
+        shadowIntensity: number
         backgroundColor: string
         gradientColors: string[]
     }
@@ -154,6 +155,34 @@ export default function RightSidebar({
             setIsLoadingPhotos(false)
         }
     }
+
+    // Gradient presets
+    const gradientPresets = [
+        { name: 'Sunset', colors: ['#ff6b6b', '#feca57'], angle: 45 },
+        { name: 'Ocean', colors: ['#4ecdc4', '#556270'], angle: 135 },
+        { name: 'Purple Haze', colors: ['#667eea', '#764ba2'], angle: 45 },
+        { name: 'Peachy', colors: ['#ed4264', '#ffedbc'], angle: 90 },
+        { name: 'Mint', colors: ['#00b09b', '#96c93d'], angle: 45 },
+        { name: 'Fire', colors: ['#f12711', '#f5af19'], angle: 45 },
+        { name: 'Cool Blues', colors: ['#2193b0', '#6dd5ed'], angle: 135 },
+        { name: 'Pink Dream', colors: ['#ec38bc', '#7303c0'], angle: 45 },
+        { name: 'Emerald', colors: ['#348f50', '#56b4d3'], angle: 90 },
+        { name: 'Bloody Mary', colors: ['#ff512f', '#dd2476'], angle: 45 },
+        { name: 'Aubergine', colors: ['#aa076b', '#61045f'], angle: 135 },
+        { name: 'Aqua Marine', colors: ['#1a2980', '#26d0ce'], angle: 45 },
+        { name: 'Neon Life', colors: ['#b3ffab', '#12fff7'], angle: 90 },
+        { name: 'Man of Steel', colors: ['#780206', '#061161'], angle: 45 },
+        { name: 'Amethyst', colors: ['#9d50bb', '#6e48aa'], angle: 135 },
+        { name: 'Cheer Up', colors: ['#ff0844', '#ffb199'], angle: 45 },
+        { name: 'Shore', colors: ['#70e1f5', '#ffd194'], angle: 90 },
+        { name: 'Velvet Sun', colors: ['#e1eec3', '#f05053'], angle: 45 },
+        { name: 'Sublime Light', colors: ['#fc5c7d', '#6a82fb'], angle: 135 },
+        { name: 'Megatron', colors: ['#c6ffdd', '#fbd786', '#f7797d'], angle: 45 },
+        { name: 'Cool Sky', colors: ['#2980b9', '#6dd5fa', '#ffffff'], angle: 90 },
+        { name: 'Dark Ocean', colors: ['#373b44', '#4286f4'], angle: 45 },
+        { name: 'Evening Sunshine', colors: ['#b92b27', '#1565c0'], angle: 135 },
+        { name: 'JShine', colors: ['#12c2e9', '#c471ed', '#f64f59'], angle: 45 }
+    ]
 
     const tabs = [
         { id: 'media', icon: FolderOpen, label: 'Media' },
@@ -276,7 +305,37 @@ export default function RightSidebar({
                 <div>
                     <div className="flex items-center gap-2 mb-2">
                         <Square className="h-4 w-4" />
-                        <h3 className="font-medium text-sm">Gradient</h3>
+                        <h3 className="font-medium text-sm">Gradient Presets</h3>
+                    </div>
+
+                    {/* Gradient Presets Grid */}
+                    <div className="grid grid-cols-3 gap-1 mb-3 max-h-64 overflow-y-auto">
+                        {gradientPresets.map((preset, index) => (
+                            <div
+                                key={index}
+                                onClick={() => onBackgroundChange({
+                                    ...backgroundSettings,
+                                    type: 'gradient',
+                                    gradientColors: preset.colors
+                                })}
+                                className={`aspect-square rounded cursor-pointer border transition-all duration-200 group ${
+                                    backgroundSettings.type === 'gradient' && 
+                                    backgroundSettings.gradientColors[0] === preset.colors[0] &&
+                                    backgroundSettings.gradientColors[1] === preset.colors[1]
+                                        ? 'border-purple-500 scale-105 shadow-lg ring-2 ring-purple-500'
+                                        : 'border-transparent hover:border-purple-300 hover:scale-105 hover:shadow-md'
+                                }`}
+                                style={{
+                                    background: `linear-gradient(${preset.angle}deg, ${preset.colors[0]}, ${preset.colors[1]})`
+                                }}
+                                title={preset.name}
+                            />
+                        ))}
+                    </div>
+
+                    <div className="flex items-center gap-2 mb-2">
+                        <Square className="h-4 w-4" />
+                        <h3 className="font-medium text-sm">Custom Gradient</h3>
                     </div>
 
                     <div className="space-y-2">
@@ -457,6 +516,23 @@ export default function RightSidebar({
                             </div>
                         </div>
                     </div>
+
+                    {/* Shadow */}
+                    <div>
+                        <Label className="text-xs text-gray-400">Shadow</Label>
+                        <div className="space-y-1 mt-1">
+                            <Slider
+                                value={[backgroundSettings.shadowIntensity || 0]}
+                                onValueChange={(value) => onBackgroundChange({ ...backgroundSettings, shadowIntensity: value[0] })}
+                                max={100}
+                                step={1}
+                                className="w-full"
+                            />
+                            <div className="text-xs text-gray-400 text-center">
+                                {backgroundSettings.shadowIntensity || 0}%
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -470,6 +546,7 @@ export default function RightSidebar({
                     blurAmount: 0,
                     padding: 3,
                     borderRadius: 12,
+                    shadowIntensity: 0,
                     backgroundColor: '#000000',
                     gradientColors: ['#ff6b6b', '#4ecdc4']
                 })}
