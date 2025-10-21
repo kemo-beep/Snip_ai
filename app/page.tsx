@@ -11,7 +11,9 @@ import { toast } from 'sonner'
 
 export default function Home() {
   const [recordedVideo, setRecordedVideo] = useState<Blob | null>(null)
+  const [webcamVideo, setWebcamVideo] = useState<Blob | null>(null)
   const [videoUrl, setVideoUrl] = useState<string>('')
+  const [webcamUrl, setWebcamUrl] = useState<string>('')
   const [shareableLink, setShareableLink] = useState<string>('')
   const [transcript, setTranscript] = useState<string>('')
   const [isUploading, setIsUploading] = useState(false)
@@ -23,10 +25,19 @@ export default function Home() {
   const isGeminiConfigured = process.env.NEXT_PUBLIC_GEMINI_API_KEY
   const isFullyConfigured = isSupabaseConfigured && isGeminiConfigured
 
-  const handleVideoRecorded = (videoBlob: Blob) => {
+  const handleVideoRecorded = (videoBlob: Blob, webcamBlob?: Blob) => {
     setRecordedVideo(videoBlob)
     const url = URL.createObjectURL(videoBlob)
     setVideoUrl(url)
+
+    // Handle webcam video if available
+    if (webcamBlob) {
+      setWebcamVideo(webcamBlob)
+      const webcamUrl = URL.createObjectURL(webcamBlob)
+      setWebcamUrl(webcamUrl)
+      console.log('Webcam video recorded:', webcamUrl)
+    }
+
     // Show editor immediately after recording
     setShowEditor(true)
   }
@@ -34,7 +45,9 @@ export default function Home() {
   const handleStartRecording = () => {
     // Clear any existing clips when starting new recording
     setRecordedVideo(null)
+    setWebcamVideo(null)
     setVideoUrl('')
+    setWebcamUrl('')
     setShareableLink('')
     setTranscript('')
     setEditedVideo(null)
@@ -98,7 +111,9 @@ export default function Home() {
 
   const resetRecording = () => {
     setRecordedVideo(null)
+    setWebcamVideo(null)
     setVideoUrl('')
+    setWebcamUrl('')
     setShareableLink('')
     setTranscript('')
     setShowEditor(false)
@@ -149,6 +164,7 @@ export default function Home() {
           ) : showEditor ? (
             <VideoEditor
               videoUrl={editedVideo ? URL.createObjectURL(editedVideo) : videoUrl}
+              webcamUrl={webcamUrl}
               onSave={handleSaveEditedVideo}
               onCancel={handleCancelEdit}
             />

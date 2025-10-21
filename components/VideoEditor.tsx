@@ -26,6 +26,7 @@ import RightSidebar from './RightSidebar'
 
 interface VideoEditorProps {
     videoUrl: string
+    webcamUrl?: string
     onSave: (editedVideoBlob: Blob) => void
     onCancel: () => void
 }
@@ -47,7 +48,7 @@ interface Overlay {
     endTime: number
 }
 
-export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorProps) {
+export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: VideoEditorProps) {
     const videoRef = useRef<HTMLVideoElement>(null)
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const [isPlaying, setIsPlaying] = useState(false)
@@ -119,26 +120,17 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
 
 
     // Simple approach: Force video ready after a very short delay
-    const [webcamVideoUrl, setWebcamVideoUrl] = useState<string | null>(null)
+    const [webcamVideoUrl, setWebcamVideoUrl] = useState<string | null>(webcamUrl || null)
     const [webcamOverlayPosition, setWebcamOverlayPosition] = useState({ x: 20, y: 20 })
     const [webcamOverlaySize, setWebcamOverlaySize] = useState({ width: 200, height: 150 })
+    const webcamVideoRef = useRef<HTMLVideoElement>(null)
 
     useEffect(() => {
-        const processVideo = async () => {
-            try {
-                const response = await fetch(videoUrl)
-                const blob = await response.blob()
-                // const { screen, webcam } = await separateVideoStreams(blob)
-                console.log('Video stream separation disabled for now')
-                // For now, just use the original video
-                console.log('Using original video URL:', videoUrl)
-            } catch (error) {
-                console.error('Error separating video streams:', error)
-            }
+        if (webcamUrl) {
+            console.log('Webcam URL provided:', webcamUrl)
+            setWebcamVideoUrl(webcamUrl)
         }
-
-        processVideo()
-    }, [videoUrl])
+    }, [webcamUrl])
 
 
     useEffect(() => {
@@ -202,6 +194,48 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                 })
             }
 
+            const addWebcamClip = (duration: number) => {
+                console.log('[addWebcamClip] Called with duration:', duration, 'webcamUrl:', !!webcamUrl)
+
+                if (!webcamUrl) {
+                    console.error('[addWebcamClip] No webcamUrl available')
+                    return
+                }
+
+                if (!duration || duration <= 0 || !isFinite(duration)) {
+                    console.error('[addWebcamClip] Invalid duration:', duration)
+                    return
+                }
+
+                console.log('[addWebcamClip] Adding webcam clip with duration:', duration)
+                setClips(prev => {
+                    // Check if webcam clip already exists
+                    const existingIndex = prev.findIndex(clip => clip.name === 'Webcam')
+
+                    if (existingIndex !== -1) {
+                        console.log('[addWebcamClip] Webcam clip already exists, skipping')
+                        return prev
+                    }
+
+                    // Add new webcam clip on effect track
+                    const webcamClip = {
+                        id: `webcam-${Date.now()}`,
+                        type: 'video' as const,
+                        name: 'Webcam',
+                        duration: duration,
+                        startTime: 0,
+                        endTime: duration,
+                        trackId: 'effect-1',
+                        thumbnail: webcamUrl,
+                        color: '#a855f7',
+                        muted: false,
+                        locked: false
+                    }
+                    console.log('[addWebcamClip] Adding new webcam clip:', webcamClip)
+                    return [...prev, webcamClip]
+                })
+            }
+
             const handleLoadedMetadata = () => {
                 console.log('Video metadata loaded, duration:', video.duration)
                 if (isFinite(video.duration) && video.duration > 0) {
@@ -209,6 +243,11 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                     setTrimRange({ start: 0, end: video.duration })
                     setIsVideoReady(true)
                     addRecordedVideoClip(video.duration)
+                    
+                    // Add webcam clip if available
+                    if (webcamUrl) {
+                        addWebcamClip(video.duration)
+                    }
                 } else {
                     console.warn('Video duration is invalid:', video.duration)
                 }
@@ -226,6 +265,9 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                     setTrimRange({ start: 0, end: video.duration })
                     setIsVideoReady(true)
                     addRecordedVideoClip(video.duration)
+                    if (webcamUrl) {
+                        addWebcamClip(video.duration)
+                    }
                 } else {
                     console.warn('⚠️ Video duration not available yet, will retry on durationchange event')
                 }
@@ -275,6 +317,9 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                     setTrimRange({ start: 0, end: video.duration })
                     setIsVideoReady(true)
                     addRecordedVideoClip(video.duration)
+                    if (webcamUrl) {
+                        addWebcamClip(video.duration)
+                    }
                 }
             }
 
@@ -286,6 +331,9 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                     setTrimRange({ start: 0, end: video.duration })
                     setIsVideoReady(true)
                     addRecordedVideoClip(video.duration)
+                    if (webcamUrl) {
+                        addWebcamClip(video.duration)
+                    }
                 }
             }
 
@@ -303,6 +351,9 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                         setTrimRange({ start: 0, end: video.duration })
                         setIsVideoReady(true)
                         addRecordedVideoClip(video.duration)
+                        if (webcamUrl) {
+                            addWebcamClip(video.duration)
+                        }
                     } else {
                         console.log('⚠️ Immediate fallback: Video not ready yet, will wait for durationchange event')
                         // Set ready but don't add clip yet
@@ -318,6 +369,9 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                         setTrimRange({ start: 0, end: video.duration })
                         setIsVideoReady(true)
                         addRecordedVideoClip(video.duration)
+                        if (webcamUrl) {
+                            addWebcamClip(video.duration)
+                        }
                     } else {
                         console.warn('⚠️ Longer fallback: Video still not ready, will wait for durationchange event')
                         // Set ready but don't add clip yet
@@ -352,12 +406,15 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
 
     const togglePlayPause = () => {
         const video = videoRef.current
+        const webcamVideo = webcamVideoRef.current
         if (video) {
             if (video.paused) {
                 video.play()
+                if (webcamVideo) webcamVideo.play()
                 setIsPlaying(true)
             } else {
                 video.pause()
+                if (webcamVideo) webcamVideo.pause()
                 setIsPlaying(false)
             }
         }
@@ -365,8 +422,10 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
 
     const seekTo = (time: number) => {
         const video = videoRef.current
+        const webcamVideo = webcamVideoRef.current
         if (video && isFinite(time) && time >= 0 && time <= duration && isVideoReady) {
             video.currentTime = time
+            if (webcamVideo) webcamVideo.currentTime = time
             setCurrentTime(time)
         }
     }
@@ -782,24 +841,36 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
 
                         {webcamVideoUrl && (
                             <div
-                                className="absolute border-2 border-blue-400 bg-black rounded-lg overflow-hidden"
+                                className="absolute border-2 border-blue-400 bg-black rounded-lg overflow-hidden shadow-2xl"
                                 style={{
                                     left: `${webcamOverlayPosition.x}px`,
                                     top: `${webcamOverlayPosition.y}px`,
                                     width: `${webcamOverlaySize.width}px`,
                                     height: `${webcamOverlaySize.height}px`,
-                                    cursor: 'move'
+                                    cursor: 'move',
+                                    zIndex: 10
                                 }}
                                 onMouseDown={handleMouseDown}
                             >
                                 <video
+                                    ref={webcamVideoRef}
                                     src={webcamVideoUrl}
                                     className="w-full h-full object-cover"
-                                    autoPlay
                                     muted
-                                    loop
+                                    onTimeUpdate={() => {
+                                        // Sync webcam video with main video
+                                        if (videoRef.current && webcamVideoRef.current) {
+                                            const timeDiff = Math.abs(videoRef.current.currentTime - webcamVideoRef.current.currentTime)
+                                            if (timeDiff > 0.1) {
+                                                webcamVideoRef.current.currentTime = videoRef.current.currentTime
+                                            }
+                                        }
+                                    }}
                                 />
-                                <div className="absolute bottom-0 right-0 w-4 h-4 bg-blue-400 cursor-se-resize" onMouseDown={handleResizeMouseDown}></div>
+                                <div className="absolute bottom-0 right-0 w-4 h-4 bg-blue-400 cursor-se-resize hover:bg-blue-500 transition-colors" onMouseDown={handleResizeMouseDown}></div>
+                                <div className="absolute top-1 left-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded backdrop-blur-sm">
+                                    Webcam
+                                </div>
                             </div>
                         )}
 

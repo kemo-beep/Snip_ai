@@ -7,7 +7,7 @@ import { Video, Square, Play, Pause, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface VideoRecorderProps {
-    onVideoRecorded: (videoBlob: Blob) => void
+    onVideoRecorded: (videoBlob: Blob, webcamBlob?: Blob) => void
     onUpload: (videoBlob: Blob) => Promise<void>
     onStartRecording?: () => void
     isUploading?: boolean
@@ -31,9 +31,12 @@ export default function VideoRecorder({
     })
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+    const webcamRecorderRef = useRef<MediaRecorder | null>(null)
     const videoRef = useRef<HTMLVideoElement>(null)
     const streamRef = useRef<MediaStream | null>(null)
+    const webcamStreamRef = useRef<MediaStream | null>(null)
     const chunksRef = useRef<Blob[]>([])
+    const webcamChunksRef = useRef<Blob[]>([])
     const timerRef = useRef<NodeJS.Timeout | null>(null)
     const animationIdRef = useRef<number | null>(null)
 
@@ -49,6 +52,9 @@ export default function VideoRecorder({
             }
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop())
+            }
+            if (webcamStreamRef.current) {
+                webcamStreamRef.current.getTracks().forEach(track => track.stop())
             }
         }
     }, [])
@@ -157,14 +163,17 @@ export default function VideoRecorder({
 
     const startRecording = useCallback(async () => {
         try {
-            console.log('Starting screen recording with webcam overlay...')
+            console.log('Starting screen recording with separate webcam...')
 
-            // Request screen and webcam streams
+            // Request screen stream
             const screenStream = await navigator.mediaDevices.getDisplayMedia({
                 video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
                 audio: true
             })
+            console.log('Screen stream obtained:', screenStream)
+            streamRef.current = screenStream
 
+            // Request webcam stream separately
             let webcamStream: MediaStream | null = null
             try {
                 webcamStream = await navigator.mediaDevices.getUserMedia({
@@ -172,17 +181,12 @@ export default function VideoRecorder({
                     audio: false
                 })
                 console.log('Webcam stream obtained:', webcamStream)
+                webcamStreamRef.current = webcamStream
             } catch (webcamError) {
                 console.warn('Webcam not available, recording screen only:', webcamError)
             }
 
-            console.log('Screen stream obtained:', screenStream)
-
-            // For now, let's just record the screen stream directly
-            // This is more reliable than canvas composition
-            streamRef.current = screenStream
-
-            // Create MediaRecorder with the screen stream
+            // Determine MIME type
             let mimeType = 'video/webm;codecs=vp9'
             if (!MediaRecorder.isTypeSupported(mimeType)) {
                 mimeType = 'video/webm'
@@ -190,39 +194,59 @@ export default function VideoRecorder({
             if (!MediaRecorder.isTypeSupported(mimeType)) {
                 mimeType = 'video/mp4'
             }
-
             console.log('Using MIME type:', mimeType)
-            console.log('Stream tracks:', streamRef.current?.getTracks().length)
 
-            // Validate stream before creating MediaRecorder
-            if (!streamRef.current || streamRef.current.getTracks().length === 0) {
-                throw new Error('No valid stream available for recording')
-            }
-
-            const mediaRecorder = new MediaRecorder(streamRef.current, {
-                mimeType: mimeType
-            })
-
-            mediaRecorderRef.current = mediaRecorder
+            // Create screen recorder
+            const screenRecorder = new MediaRecorder(screenStream, { mimeType })
+            mediaRecorderRef.current = screenRecorder
             chunksRef.current = []
 
-            mediaRecorder.ondataavailable = (event) => {
-                console.log('Data available:', event.data.size, 'bytes')
+            screenRecorder.ondataavailable = (event) => {
                 if (event.data.size > 0) {
                     chunksRef.current.push(event.data)
+                    console.log('Screen data chunk:', event.data.size, 'bytes')
                 }
             }
 
-            mediaRecorder.onstop = () => {
-                console.log('Recording stopped, chunks:', chunksRef.current.length)
-                const videoBlob = new Blob(chunksRef.current, { type: mimeType })
-                console.log('Video blob size:', videoBlob.size, 'bytes')
+            // Create webcam recorder if available
+            let webcamRecorder: MediaRecorder | null = null
+            if (webcamStream) {
+                webcamRecorder = new MediaRecorder(webcamStream, { mimeType })
+                webcamRecorderRef.current = webcamRecorder
+                webcamChunksRef.current = []
 
-                if (videoBlob.size > 0) {
-                    const videoUrl = URL.createObjectURL(videoBlob)
+                webcamRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        webcamChunksRef.current.push(event.data)
+                        console.log('Webcam data chunk:', event.data.size, 'bytes')
+                    }
+                }
+
+                webcamRecorder.onstop = () => {
+                    console.log('Webcam recording stopped, chunks:', webcamChunksRef.current.length)
+                }
+
+                webcamRecorder.onerror = (event) => {
+                    console.error('Webcam recorder error:', event)
+                }
+            }
+
+            screenRecorder.onstop = () => {
+                console.log('Screen recording stopped, chunks:', chunksRef.current.length)
+                const screenBlob = new Blob(chunksRef.current, { type: mimeType })
+                console.log('Screen blob size:', screenBlob.size, 'bytes')
+
+                let webcamBlob: Blob | undefined = undefined
+                if (webcamChunksRef.current.length > 0) {
+                    webcamBlob = new Blob(webcamChunksRef.current, { type: mimeType })
+                    console.log('Webcam blob size:', webcamBlob.size, 'bytes')
+                }
+
+                if (screenBlob.size > 0) {
+                    const videoUrl = URL.createObjectURL(screenBlob)
                     setRecordedVideo(videoUrl)
-                    onVideoRecorded(videoBlob)
-                    console.log('Video recorded successfully! Editor will open automatically...')
+                    onVideoRecorded(screenBlob, webcamBlob)
+                    console.log('Recording completed successfully!')
                     toast.success('Recording completed successfully!')
                 } else {
                     console.error('Recording failed - no data recorded')
@@ -230,13 +254,17 @@ export default function VideoRecorder({
                 }
             }
 
-            mediaRecorder.onerror = (event) => {
-                console.error('MediaRecorder error:', event)
+            screenRecorder.onerror = (event) => {
+                console.error('Screen recorder error:', event)
                 alert('Recording error occurred. Please try again.')
             }
 
-            // Start recording
-            mediaRecorder.start(100)
+            // Start both recorders
+            screenRecorder.start(100)
+            if (webcamRecorder) {
+                webcamRecorder.start(100)
+            }
+
             setIsRecording(true)
             setRecordingTime(0)
 
@@ -250,22 +278,21 @@ export default function VideoRecorder({
                 setRecordingTime(prev => prev + 1)
             }, 1000)
 
-            // If we have webcam, we can try to add it as an overlay later
-            // For now, just record the screen
-            if (webcamStream) {
-                console.log('Webcam available but not composited yet - screen only recording')
-                // TODO: Implement proper webcam overlay using a different approach
-            }
-
         } catch (error) {
             console.error('Error starting recording:', error)
             alert('Failed to start recording. Please check permissions.')
         }
-    }, [onVideoRecorded, isRecording, isPaused, onStartRecording, permissions])
+    }, [onVideoRecorded, onStartRecording])
 
     const stopRecording = useCallback(() => {
         if (mediaRecorderRef.current && isRecording) {
             mediaRecorderRef.current.stop()
+            
+            // Stop webcam recorder if it exists
+            if (webcamRecorderRef.current) {
+                webcamRecorderRef.current.stop()
+            }
+            
             setIsRecording(false)
             setIsPaused(false)
 
@@ -284,6 +311,11 @@ export default function VideoRecorder({
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop())
                 streamRef.current = null
+            }
+            
+            if (webcamStreamRef.current) {
+                webcamStreamRef.current.getTracks().forEach(track => track.stop())
+                webcamStreamRef.current = null
             }
         }
     }, [isRecording])
