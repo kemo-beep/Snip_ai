@@ -83,6 +83,7 @@ interface MultiTrackTimelineProps {
     onUpdateClip: (clipId: string, updates: Partial<Clip>) => void
     onDeleteClip: (clipId: string) => void
     onDuplicateClip: (clipId: string) => void
+    onAddClip: (clip: Clip) => void
 }
 
 export default function MultiTrackTimeline({
@@ -98,6 +99,7 @@ export default function MultiTrackTimeline({
     onCrop,
     onAspectRatioChange,
     clips,
+    onAddClip,
     onUpdateClip,
     onDeleteClip,
     onDuplicateClip,
@@ -123,6 +125,8 @@ export default function MultiTrackTimeline({
     const [isPanning, setIsPanning] = useState(false)
     const [panStart, setPanStart] = useState({ x: 0, y: 0 })
     const [scrollOffset, setScrollOffset] = useState(0)
+    const [isResizing, setIsResizing] = useState(false)
+    const [resizeDirection, setResizeDirection] = useState<"left" | "right" | null>(null)
 
     const timelineRef = useRef<HTMLDivElement>(null)
     const timelineContainerRef = useRef<HTMLDivElement>(null)
@@ -213,27 +217,34 @@ export default function MultiTrackTimeline({
             (clip) => clip.startTime <= currentTime && clip.endTime >= currentTime && !clip.locked,
         )
 
-        if (clipsAtPlayhead.length === 0) return
+        if (clipsAtPlayhead.length === 0) {
+            console.log("[Timeline] No clips at playhead to split")
+            return
+        }
 
         clipsAtPlayhead.forEach((clip) => {
             // Create two new clips from the split
-            const leftClip = {
+            const leftClip: Clip = {
                 ...clip,
                 id: `${clip.id}-left-${Date.now()}`,
                 endTime: currentTime,
             }
-            const rightClip = {
+            const rightClip: Clip = {
                 ...clip,
                 id: `${clip.id}-right-${Date.now()}`,
                 startTime: currentTime,
             }
 
+            console.log("[Timeline] Splitting clip:", clip.name, "at", currentTime)
+            console.log("[Timeline] Left clip:", leftClip.startTime, "to", leftClip.endTime)
+            console.log("[Timeline] Right clip:", rightClip.startTime, "to", rightClip.endTime)
+
             // Delete original and add split clips
             onDeleteClip(clip.id)
-            // Note: In a real implementation, you'd need onAddClip function
-            console.log("[v0] Split clip:", { leftClip, rightClip })
+            onAddClip(leftClip)
+            onAddClip(rightClip)
         })
-    }, [clips, currentTime, onDeleteClip])
+    }, [clips, currentTime, onDeleteClip, onAddClip])
 
     const copySelectedClips = useCallback(() => {
         const clipsToCopy = clips.filter((clip) => selectedClips.includes(clip.id))
@@ -365,6 +376,45 @@ export default function MultiTrackTimeline({
         [onSeek],
     )
 
+    const handleActionResizeStart = useCallback(
+        (params: { action: TimelineAction; row: TimelineRow; dir: "left" | "right" }) => {
+            setIsResizing(true)
+            setResizeDirection(params.dir)
+            console.log(`Started resizing clip ${params.action.id} from ${params.dir} edge`)
+        },
+        [],
+    )
+
+    const handleActionResizeEnd = useCallback(
+        (params: { action: TimelineAction; row: TimelineRow; start: number; end: number; dir: "right" | "left" }) => {
+            setIsResizing(false)
+            setResizeDirection(null)
+            console.log(`Finished resizing clip ${params.action.id}`)
+
+            // Ensure clip stays on its original track after resize
+            const clip = clips.find(c => c.id === params.action.id)
+            if (clip && clip.trackId !== params.row.id) {
+                console.warn(`Clip ${params.action.id} tried to move to different track during resize, reverting`)
+                // The onChange handler will fix this
+            }
+        },
+        [clips],
+    )
+
+    const handleActionMoveStart = useCallback(
+        (params: { action: TimelineAction; row: TimelineRow }) => {
+            console.log(`Started moving clip ${params.action.id}`)
+        },
+        [],
+    )
+
+    const handleActionMoveEnd = useCallback(
+        (params: { action: TimelineAction; row: TimelineRow; start: number; end: number }) => {
+            console.log(`Finished moving clip ${params.action.id} to track ${params.row.id}`)
+        },
+        [],
+    )
+
     const handleActionClick = useCallback(
         (e: React.MouseEvent, param: { action: TimelineAction; row: TimelineRow; time: number }) => {
             e.stopPropagation()
@@ -416,20 +466,21 @@ export default function MultiTrackTimeline({
             return {
                 id: track.id,
                 actions: trackClips.map((clip) => {
-                    const action = {
+                    const isLocked = track.locked || clip.locked
+                    const action: TimelineAction = {
                         id: clip.id,
                         start: clip.startTime,
                         end: clip.endTime,
                         effectId: `${track.type}-${clip.id}`,
-                        flexible: true, // Allow resizing by default
-                        movable: !track.locked && !clip.locked, // Allow moving unless track or clip is locked
-                        removable: !track.locked, // Allow removal unless track is locked
+                        flexible: !isLocked, // Allow resizing only if not locked
+                        movable: !isLocked, // Allow moving only if not locked
                         selected: selectedClips.includes(clip.id),
                         // Add constraints for better UX
                         minStart: 0, // Prevent moving before timeline start
                         maxEnd: duration, // Prevent extending beyond video duration
+                        disable: isLocked, // Disable all interactions if locked (boolean, not object)
                     }
-                    console.log(`Clip ${clip.name}: start=${action.start}, end=${action.end}, duration=${action.end - action.start}`)
+                    console.log(`Clip ${clip.name}: start=${action.start}, end=${action.end}, duration=${action.end - action.start}, flexible=${action.flexible}, movable=${action.movable}`)
                     return action
                 }),
             }
@@ -448,10 +499,19 @@ export default function MultiTrackTimeline({
                     const clipId = action.id
                     const clip = clips.find((c) => c.id === clipId)
                     if (clip) {
-                        onUpdateClip(clipId, {
+                        // Check if clip moved to a different track
+                        const updates: Partial<Clip> = {
                             startTime: action.start,
                             endTime: action.end,
-                        })
+                        }
+
+                        // Only update trackId if it actually changed
+                        if (clip.trackId !== row.id) {
+                            console.log(`Clip ${clip.name} moved from track ${clip.trackId} to ${row.id}`)
+                            updates.trackId = row.id
+                        }
+
+                        onUpdateClip(clipId, updates)
                     }
                 })
             })
@@ -522,18 +582,25 @@ export default function MultiTrackTimeline({
     // Handle action resize
     const handleActionResizingFinal = useCallback(
         (params: { action: TimelineAction; row: TimelineRow; start: number; end: number; dir: "right" | "left" }) => {
-            const { action, start, end, dir } = params
+            const { action, start, end, dir, row } = params
 
             // Check if action is flexible
             if (!action.flexible) {
-                console.log("Action is not flexible:", action.id)
+                console.log("Action is not flexible (locked):", action.id)
                 return false
+            }
+
+            // CRITICAL: Prevent clip from moving to a different track during resize
+            const clip = clips.find(c => c.id === action.id)
+            if (clip && clip.trackId !== row.id) {
+                console.warn(`Resize blocked: Clip ${action.id} trying to move from track ${clip.trackId} to ${row.id}`)
+                return false // Block the resize if it would move the clip to a different track
             }
 
             // Apply constraints
             const minStart = action.minStart || 0
             const maxEnd = action.maxEnd || duration
-            const minDuration = 0.1 // Minimum 0.1 seconds
+            const minDuration = 0.033 // Minimum 1 frame at 30fps (~0.033 seconds)
 
             // Ensure we don't go below minimum start time
             if (start < minStart) {
@@ -546,25 +613,38 @@ export default function MultiTrackTimeline({
             }
 
             // Ensure minimum duration
-            if (end - start < minDuration) {
+            const currentDuration = end - start
+            if (currentDuration < minDuration) {
                 if (dir === "right") {
-                    params.end = start + minDuration
+                    params.end = params.start + minDuration
                 } else {
-                    params.start = end - minDuration
+                    params.start = params.end - minDuration
                 }
             }
 
             // Apply snapping if enabled
             if (isSnapping) {
                 const snapInterval = 1 / 30 // 30fps snap
-                params.start = Math.round(params.start / snapInterval) * snapInterval
-                params.end = Math.round(params.end / snapInterval) * snapInterval
+                if (dir === "left") {
+                    params.start = Math.round(params.start / snapInterval) * snapInterval
+                } else {
+                    params.end = Math.round(params.end / snapInterval) * snapInterval
+                }
+
+                // Ensure minimum duration after snapping
+                if (params.end - params.start < minDuration) {
+                    if (dir === "right") {
+                        params.end = params.start + minDuration
+                    } else {
+                        params.start = params.end - minDuration
+                    }
+                }
             }
 
-            console.log("Resizing action:", action.id, "dir:", dir, "start:", params.start, "end:", params.end)
+            console.log(`Resizing clip ${action.id}: ${dir} edge, start=${params.start.toFixed(3)}s, end=${params.end.toFixed(3)}s, duration=${(params.end - params.start).toFixed(3)}s`)
             return true
         },
-        [isSnapping, duration],
+        [isSnapping, duration, clips],
     )
 
     const addTrack = useCallback(
@@ -647,6 +727,7 @@ export default function MultiTrackTimeline({
             const isSelected = selectedClips.includes(action.id)
             const isHovered = hoveredClip === action.id
             const clipDuration = clip.endTime - clip.startTime
+            const isClipResizing = isResizing && isSelected
 
             return (
                 <div
@@ -655,7 +736,7 @@ export default function MultiTrackTimeline({
                         : isHovered
                             ? "ring-2 ring-blue-300/60 shadow-md scale-[1.01] z-5"
                             : "hover:shadow-md hover:scale-[1.005]"
-                        } ${isDragging && isSelected ? "scale-105 shadow-xl shadow-blue-500/60" : ""}`}
+                        } ${isDragging && isSelected ? "scale-105 shadow-xl shadow-blue-500/60" : ""} ${isClipResizing ? "ring-4 ring-blue-500 shadow-2xl" : ""}`}
                     style={{
                         backgroundColor: track.color,
                         backgroundImage: `linear-gradient(to bottom, ${track.color}, ${track.color}dd)`,
@@ -738,12 +819,26 @@ export default function MultiTrackTimeline({
                     <div className="absolute right-0 top-0 bottom-0 w-2 bg-gradient-to-l from-black/20 to-transparent pointer-events-none" />
 
                     {/* Resize handles - visible on hover and only if flexible */}
-                    {/* Note: The timeline library handles resize internally, these are just visual indicators */}
                     {track.locked === false && clip.locked === false && (
                         <>
-                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-                            <div className="absolute right-0 top-0 bottom-0 w-1 bg-blue-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                            {/* Left resize handle */}
+                            <div className="absolute left-0 top-0 bottom-0 w-2 opacity-0 group-hover:opacity-100 transition-all duration-200 cursor-ew-resize z-10">
+                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400 shadow-lg" />
+                                <div className="absolute left-0.5 top-1/2 -translate-y-1/2 w-1 h-8 bg-white/90 rounded-full shadow-md" />
+                            </div>
+                            {/* Right resize handle */}
+                            <div className="absolute right-0 top-0 bottom-0 w-2 opacity-0 group-hover:opacity-100 transition-all duration-200 cursor-ew-resize z-10">
+                                <div className="absolute right-0 top-0 bottom-0 w-1 bg-blue-400 shadow-lg" />
+                                <div className="absolute right-0.5 top-1/2 -translate-y-1/2 w-1 h-8 bg-white/90 rounded-full shadow-md" />
+                            </div>
                         </>
+                    )}
+
+                    {/* Locked indicator overlay */}
+                    {(track.locked || clip.locked) && (
+                        <div className="absolute inset-0 bg-gray-900/20 pointer-events-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Lock className="h-4 w-4 text-white/60" />
+                        </div>
                     )}
 
                     {/* Selection indicator */}
@@ -763,11 +858,19 @@ export default function MultiTrackTimeline({
 
             const isSelected = selectedTracks.includes(track.id)
             const trackClips = clips.filter((c) => c.trackId === track.id)
+            const trackDuration = trackClips.reduce((sum, clip) => sum + (clip.endTime - clip.startTime), 0)
 
             return (
                 <div
                     className={`h-full flex items-center px-2 border-r border-gray-600/50 transition-all duration-200 ${isSelected ? "bg-blue-900/30 border-blue-500" : "bg-gray-800/50 hover:bg-gray-700/50"
                         }`}
+                    onClick={() => {
+                        if (isSelected) {
+                            setSelectedTracks([])
+                        } else {
+                            setSelectedTracks([track.id])
+                        }
+                    }}
                 >
                     <div className="flex items-center gap-2 w-full">
                         {/* Track Color Indicator */}
@@ -788,7 +891,10 @@ export default function MultiTrackTimeline({
                                     ? "text-red-400 bg-red-500/10 hover:bg-red-500/20"
                                     : "text-gray-300 hover:text-white hover:bg-gray-600"
                                     }`}
-                                onClick={() => toggleTrackMute(track.id)}
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    toggleTrackMute(track.id)
+                                }}
                                 title={track.muted ? "Unmute track" : "Mute track"}
                             >
                                 {track.muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
@@ -800,7 +906,10 @@ export default function MultiTrackTimeline({
                                     ? "text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20"
                                     : "text-gray-300 hover:text-white hover:bg-gray-600"
                                     }`}
-                                onClick={() => toggleTrackSolo(track.id)}
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    toggleTrackSolo(track.id)
+                                }}
                                 title={track.solo ? "Unsolo track" : "Solo track"}
                             >
                                 {track.solo ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
@@ -812,7 +921,10 @@ export default function MultiTrackTimeline({
                                     ? "text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20"
                                     : "text-gray-300 hover:text-white hover:bg-gray-600"
                                     }`}
-                                onClick={() => toggleTrackLock(track.id)}
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    toggleTrackLock(track.id)
+                                }}
                                 title={track.locked ? "Unlock track" : "Lock track"}
                             >
                                 {track.locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
@@ -831,19 +943,23 @@ export default function MultiTrackTimeline({
                             <div className="flex flex-col flex-1 min-w-0">
                                 <span className="text-xs text-gray-200 truncate font-medium">{track.name}</span>
                                 <span className="text-[10px] text-gray-500">
-                                    {trackClips.length} {trackClips.length === 1 ? "clip" : "clips"} • {track.height}px
-                                    {track.locked && " • 🔒 Locked"}
+                                    {trackClips.length} {trackClips.length === 1 ? "clip" : "clips"}
+                                    {trackDuration > 0 && ` • ${formatTime(trackDuration)}`}
+                                    {track.locked && " • 🔒"}
                                 </span>
                             </div>
                         </div>
 
                         {/* Track Actions */}
-                        <div className="flex items-center gap-0.5">
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                             <Button
                                 variant="ghost"
                                 size="sm"
                                 className="h-6 w-6 p-0 text-gray-400 hover:text-gray-200 hover:bg-gray-600 transition-all duration-200"
-                                onClick={() => moveTrack(track.id, "up")}
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    moveTrack(track.id, "up")
+                                }}
                                 title="Move track up"
                             >
                                 <ChevronUp className="h-3 w-3" />
@@ -852,7 +968,10 @@ export default function MultiTrackTimeline({
                                 variant="ghost"
                                 size="sm"
                                 className="h-6 w-6 p-0 text-gray-400 hover:text-gray-200 hover:bg-gray-600 transition-all duration-200"
-                                onClick={() => moveTrack(track.id, "down")}
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    moveTrack(track.id, "down")
+                                }}
                                 title="Move track down"
                             >
                                 <ChevronDown className="h-3 w-3" />
@@ -861,7 +980,12 @@ export default function MultiTrackTimeline({
                                 variant="ghost"
                                 size="sm"
                                 className="h-6 w-6 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-all duration-200"
-                                onClick={() => deleteTrack(track.id)}
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (confirm(`Delete "${track.name}"? This will remove all clips on this track.`)) {
+                                        deleteTrack(track.id)
+                                    }
+                                }}
                                 title="Delete track"
                             >
                                 <Trash2 className="h-3 w-3" />
@@ -1041,8 +1165,11 @@ export default function MultiTrackTimeline({
 
     // Close context menu when clicking outside
     useEffect(() => {
-        const handleClickOutside = () => {
-            setContextMenu(null)
+        const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as HTMLElement
+            if (!target.closest('.context-menu')) {
+                setContextMenu(null)
+            }
         }
         document.addEventListener("click", handleClickOutside)
         return () => document.removeEventListener("click", handleClickOutside)
@@ -1084,7 +1211,7 @@ export default function MultiTrackTimeline({
     console.log("[v0] Rendering MultiTrackTimeline with data:", { timelineData, clips, tracks, markers, zoom })
 
     return (
-        <div className="bg-[#0a0a0f] border-t border-gray-800 h-full flex flex-col">
+        <div className="bg-[#0a0a0f] border-t border-gray-800 h-full flex flex-col relative">
             {/* Timeline Controls - Compact */}
             <div className="px-6 py-2 border-b border-gray-800/50 bg-[#0f0f14]/50">
                 <div className="flex items-center justify-between">
@@ -1190,22 +1317,32 @@ export default function MultiTrackTimeline({
                             </Button>
                         </div>
 
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 text-gray-400 hover:text-white"
-                            onClick={addMarker}
-                            title="Add Marker (M)"
-                        >
-                            <Bookmark className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-1 border-r border-gray-700 pr-3">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className={`h-7 w-7 p-0 ${isSnapping ? 'text-blue-400 bg-blue-500/10' : 'text-gray-400'} hover:text-white`}
+                                onClick={() => setIsSnapping(!isSnapping)}
+                                title="Toggle Snapping"
+                            >
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                                </svg>
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-gray-400 hover:text-white"
+                                onClick={addMarker}
+                                title="Add Marker (M)"
+                            >
+                                <Bookmark className="h-4 w-4" />
+                            </Button>
+                        </div>
 
-                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-gray-400 hover:text-white" title="Search">
-                            <Search className="h-4 w-4" />
-                        </Button>
-                        <div className="w-32 h-1 bg-gray-800 rounded-full overflow-hidden">
+                        <div className="w-32 h-1.5 bg-gray-800 rounded-full overflow-hidden shadow-inner">
                             <div
-                                className="h-full bg-purple-600 rounded-full transition-all duration-200"
+                                className="h-full bg-gradient-to-r from-purple-600 to-blue-500 rounded-full transition-all duration-200 shadow-sm"
                                 style={{ width: `${playheadPosition}%` }}
                             />
                         </div>
@@ -1215,17 +1352,34 @@ export default function MultiTrackTimeline({
 
             <div
                 ref={timelineRef}
-                className="relative bg-[#0a0a0f] px-6 py-2 border-b border-gray-800/30 cursor-pointer"
+                className="relative bg-[#0a0a0f] px-6 py-2 border-b border-gray-800/30 cursor-pointer group"
                 onClick={handleTimelineClick}
             >
-                <div className="flex items-center justify-between text-xs text-gray-500 font-mono">
+                <div className="flex items-center justify-between text-xs text-gray-500 font-mono mb-1">
                     {Array.from({ length: 11 }).map((_, i) => {
                         const time = (duration / 10) * i
                         return (
                             <div key={i} className="flex flex-col items-center">
-                                <span>{formatTime(time)}</span>
+                                <span className="transition-colors group-hover:text-gray-400">{formatTime(time)}</span>
                                 <div className="w-px h-2 bg-gray-700 mt-1" />
                             </div>
+                        )
+                    })}
+                </div>
+
+                {/* Time ruler with minor ticks */}
+                <div className="absolute bottom-0 left-6 right-6 h-px bg-gray-700/50">
+                    {Array.from({ length: 51 }).map((_, i) => {
+                        const isMajor = i % 5 === 0
+                        return (
+                            <div
+                                key={i}
+                                className={`absolute bottom-0 ${isMajor ? 'h-2 bg-gray-600' : 'h-1 bg-gray-700/50'}`}
+                                style={{
+                                    left: `${(i / 50) * 100}%`,
+                                    width: '1px'
+                                }}
+                            />
                         )
                     })}
                 </div>
@@ -1235,13 +1389,17 @@ export default function MultiTrackTimeline({
                     return (
                         <div
                             key={marker.id}
-                            className="absolute top-0 bottom-0 w-0.5 bg-blue-500 z-40 cursor-pointer group"
+                            className="absolute top-0 bottom-0 w-0.5 bg-blue-500 z-40 cursor-pointer group/marker"
                             style={{ left: `${position}%` }}
                             title={marker.label}
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                onSeek(marker.time)
+                            }}
                         >
-                            <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-blue-500 rounded-full shadow-lg" />
-                            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-[10px] px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                                {marker.label}
+                            <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-blue-500 rounded-full shadow-lg group-hover/marker:scale-125 transition-transform" />
+                            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-[10px] px-2 py-0.5 rounded opacity-0 group-hover/marker:opacity-100 transition-opacity whitespace-nowrap shadow-lg">
+                                {marker.label} • {formatTime(marker.time)}
                             </div>
                         </div>
                     )
@@ -1259,8 +1417,12 @@ export default function MultiTrackTimeline({
                     onCursorDragEnd={handleCursorDragEnd}
                     onClickTimeArea={handleClickTimeArea}
                     onClickAction={handleActionClick}
+                    onActionMoveStart={handleActionMoveStart}
                     onActionMoving={handleActionMovingFinal}
+                    onActionMoveEnd={handleActionMoveEnd}
+                    onActionResizeStart={handleActionResizeStart}
                     onActionResizing={handleActionResizingFinal}
+                    onActionResizeEnd={handleActionResizeEnd}
                     getActionRender={getActionRender}
                     scale={zoom}
                     startLeft={200}
@@ -1292,15 +1454,141 @@ export default function MultiTrackTimeline({
             </div>
 
             <div className="px-6 py-1 border-t border-gray-800/50 bg-[#0f0f14]/50">
-                <div className="text-[10px] text-gray-600 flex items-center gap-4">
-                    <span>Space: Play/Pause</span>
-                    <span>S: Split</span>
-                    <span>M: Marker</span>
-                    <span>←→: Frame</span>
-                    <span>Del: Delete</span>
-                    <span>+/-: Zoom</span>
+                <div className="text-[10px] text-gray-600 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <span className="flex items-center gap-1">
+                            <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">Space</kbd> Play/Pause
+                        </span>
+                        <span className="flex items-center gap-1">
+                            <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">S</kbd> Split
+                        </span>
+                        <span className="flex items-center gap-1">
+                            <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">M</kbd> Marker
+                        </span>
+                        <span className="flex items-center gap-1">
+                            <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">←→</kbd> Frame
+                        </span>
+                        <span className="flex items-center gap-1">
+                            <kbd className="px-1 py-0.5 bg-gray-700/50 rounded text-gray-400">Del</kbd> Delete
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-500">
+                        <span>{selectedClips.length} selected</span>
+                        <span>•</span>
+                        <span>{clips.length} clips</span>
+                        <span>•</span>
+                        <span>{tracks.length} tracks</span>
+                    </div>
                 </div>
             </div>
+
+            {/* Context Menu */}
+            {contextMenu && (
+                <div
+                    className="context-menu fixed bg-gray-800 border border-gray-700 rounded-lg shadow-2xl py-1 z-50 min-w-[180px]"
+                    style={{
+                        left: `${contextMenu.x}px`,
+                        top: `${contextMenu.y}px`,
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {contextMenu.clipId && (
+                        <>
+                            <button
+                                className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                                onClick={() => {
+                                    copySelectedClips()
+                                    setContextMenu(null)
+                                }}
+                            >
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                                Copy
+                                <span className="ml-auto text-xs text-gray-500">Ctrl+C</span>
+                            </button>
+                            <button
+                                className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                                onClick={() => {
+                                    onDuplicateClip(contextMenu.clipId!)
+                                    setContextMenu(null)
+                                }}
+                            >
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                                </svg>
+                                Duplicate
+                                <span className="ml-auto text-xs text-gray-500">Ctrl+D</span>
+                            </button>
+                            <div className="h-px bg-gray-700 my-1" />
+                            <button
+                                className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                                onClick={() => {
+                                    splitClipAtPlayhead()
+                                    setContextMenu(null)
+                                }}
+                            >
+                                <Scissors className="h-4 w-4" />
+                                Split at Playhead
+                                <span className="ml-auto text-xs text-gray-500">S</span>
+                            </button>
+                            <div className="h-px bg-gray-700 my-1" />
+                            <button
+                                className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2"
+                                onClick={() => {
+                                    selectedClips.forEach((clipId) => onDeleteClip(clipId))
+                                    setSelectedClips([])
+                                    setContextMenu(null)
+                                }}
+                            >
+                                <Trash2 className="h-4 w-4" />
+                                Delete
+                                <span className="ml-auto text-xs text-gray-500">Del</span>
+                            </button>
+                            <button
+                                className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2"
+                                onClick={() => {
+                                    rippleDelete()
+                                    setContextMenu(null)
+                                }}
+                            >
+                                <Trash2 className="h-4 w-4" />
+                                Ripple Delete
+                                <span className="ml-auto text-xs text-gray-500">Shift+Del</span>
+                            </button>
+                        </>
+                    )}
+                    {contextMenu.trackId && (
+                        <>
+                            <button
+                                className="w-full px-3 py-2 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                                onClick={() => {
+                                    const track = tracks.find(t => t.id === contextMenu.trackId)
+                                    if (track) {
+                                        addTrack(track.type)
+                                    }
+                                    setContextMenu(null)
+                                }}
+                            >
+                                <Layers className="h-4 w-4" />
+                                Add Track
+                            </button>
+                            <button
+                                className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2"
+                                onClick={() => {
+                                    if (confirm('Delete this track and all its clips?')) {
+                                        deleteTrack(contextMenu.trackId!)
+                                    }
+                                    setContextMenu(null)
+                                }}
+                            >
+                                <Trash2 className="h-4 w-4" />
+                                Delete Track
+                            </button>
+                        </>
+                    )}
+                </div>
+            )}
         </div>
     )
 }

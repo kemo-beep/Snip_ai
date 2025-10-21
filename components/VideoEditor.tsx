@@ -91,10 +91,6 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
         setClips(prev => [...prev, clip])
     }
 
-    const handleRemoveClip = (clipId: string) => {
-        setClips(prev => prev.filter(clip => clip.id !== clipId))
-    }
-
     const handleUpdateClip = (clipId: string, updates: any) => {
         setClips(prev => prev.map(clip =>
             clip.id === clipId ? { ...clip, ...updates } : clip
@@ -117,10 +113,6 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
             }
             setClips(prev => [...prev, newClip])
         }
-    }
-
-    const clearClips = () => {
-        setClips([])
     }
 
 
@@ -155,33 +147,57 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
             video.load()
 
             const addRecordedVideoClip = (duration: number) => {
-                if (videoUrl) {
-                    console.log('Adding recorded video as clip to timeline')
-                    setClips(prev => {
-                        // Check if recorded video already exists
-                        const existingRecordedVideo = prev.find(clip => clip.name === 'Recorded Video')
-                        if (existingRecordedVideo) {
-                            console.log('Recorded video already exists in timeline')
-                            return prev // Don't add duplicate
-                        }
+                console.log('[addRecordedVideoClip] Called with duration:', duration, 'videoUrl:', !!videoUrl)
 
-                        const recordedVideoClip = {
-                            id: `recorded-video-${Date.now()}`,
-                            type: 'video' as const,
-                            name: 'Recorded Video',
-                            duration: duration,
-                            startTime: 0,
-                            endTime: duration,
-                            trackId: 'video-1',
-                            thumbnail: videoUrl, // Use video URL as thumbnail for now
-                            color: '#3b82f6', // Blue color for recorded video
-                            muted: false,
-                            locked: false
-                        }
-                        console.log('Adding new recorded video clip:', recordedVideoClip)
-                        return [...prev, recordedVideoClip]
-                    })
+                if (!videoUrl) {
+                    console.error('[addRecordedVideoClip] No videoUrl available')
+                    return
                 }
+
+                if (!duration || duration <= 0 || !isFinite(duration)) {
+                    console.error('[addRecordedVideoClip] Invalid duration:', duration)
+                    return
+                }
+
+                console.log('[addRecordedVideoClip] Adding/updating recorded video clip with duration:', duration)
+                setClips(prev => {
+                    console.log('[addRecordedVideoClip] Current clips:', prev.length)
+
+                    // Check if recorded video already exists
+                    const existingIndex = prev.findIndex(clip => clip.name === 'Recorded Video')
+
+                    if (existingIndex !== -1) {
+                        // Update existing clip with correct duration
+                        console.log('[addRecordedVideoClip] Updating existing clip at index', existingIndex, 'from', prev[existingIndex].endTime, 'to', duration)
+                        const updated = [...prev]
+                        updated[existingIndex] = {
+                            ...updated[existingIndex],
+                            duration: duration,
+                            endTime: duration,
+                        }
+                        console.log('[addRecordedVideoClip] Updated clips:', updated.length)
+                        return updated
+                    }
+
+                    // Add new clip
+                    const recordedVideoClip = {
+                        id: `recorded-video-${Date.now()}`,
+                        type: 'video' as const,
+                        name: 'Recorded Video',
+                        duration: duration,
+                        startTime: 0,
+                        endTime: duration,
+                        trackId: 'video-1',
+                        thumbnail: videoUrl,
+                        color: '#3b82f6',
+                        muted: false,
+                        locked: false
+                    }
+                    console.log('[addRecordedVideoClip] Adding new clip:', recordedVideoClip)
+                    const newClips = [...prev, recordedVideoClip]
+                    console.log('[addRecordedVideoClip] New clips array:', newClips.length)
+                    return newClips
+                })
             }
 
             const handleLoadedMetadata = () => {
@@ -201,16 +217,15 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
             }
 
             const handleCanPlay = () => {
-                console.log('Video can play, setting ready state')
+                console.log('Video can play, readyState:', video.readyState, 'duration:', video.duration)
                 if (isFinite(video.duration) && video.duration > 0) {
+                    console.log('✅ Valid video duration detected:', video.duration)
                     setDuration(video.duration)
                     setTrimRange({ start: 0, end: video.duration })
                     setIsVideoReady(true)
                     addRecordedVideoClip(video.duration)
                 } else {
-                    // Fallback: Add clip with default duration
-                    console.log('Using fallback duration for recorded video clip')
-                    addRecordedVideoClip(10) // Default 10 seconds
+                    console.warn('⚠️ Video duration not available yet, will retry on durationchange event')
                 }
             }
 
@@ -218,23 +233,29 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                 console.log('Video load started')
                 setIsVideoReady(false)
 
-                // Set a timeout to force video ready after 2 seconds
+                // Set a timeout to force video ready after 3 seconds
                 const timeout = setTimeout(() => {
-                    console.log('Video load timeout - forcing ready state')
-                    setForceReady(true)
-                    setIsVideoReady(true)
+                    console.log('Video load timeout - checking state')
+
+                    // Try to get duration one more time
                     if (video.readyState >= 1 && isFinite(video.duration) && video.duration > 0) {
+                        console.log('✅ Duration available after timeout:', video.duration)
                         setDuration(video.duration)
                         setTrimRange({ start: 0, end: video.duration })
+                        setIsVideoReady(true)
                         addRecordedVideoClip(video.duration)
                     } else {
-                        // Even if video isn't fully loaded, show the editor with default values
-                        console.log('Forcing video ready despite incomplete load')
-                        setDuration(60) // Default duration
+                        // Last resort: Show editor and let durationchange event add the clip
+                        console.warn('⚠️ Video duration still not available after timeout')
+                        console.warn('ReadyState:', video.readyState, 'Duration:', video.duration)
+                        console.warn('Will show editor and wait for durationchange event')
+                        setForceReady(true)
+                        setIsVideoReady(true)
+                        // Set a placeholder duration for the timeline (will be updated by durationchange)
+                        setDuration(60)
                         setTrimRange({ start: 0, end: 60 })
-                        addRecordedVideoClip(60) // Add clip with default duration
                     }
-                }, 2000)
+                }, 3000)
 
                 setVideoLoadTimeout(timeout)
             }
@@ -245,11 +266,24 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
             }
 
             const handleLoadedData = () => {
-                console.log('Video data loaded')
+                console.log('Video data loaded, duration:', video.duration)
                 if (isFinite(video.duration) && video.duration > 0) {
+                    console.log('✅ Setting duration from loadeddata:', video.duration)
                     setDuration(video.duration)
                     setTrimRange({ start: 0, end: video.duration })
                     setIsVideoReady(true)
+                    addRecordedVideoClip(video.duration)
+                }
+            }
+
+            const handleDurationChange = () => {
+                console.log('Duration changed event, new duration:', video.duration)
+                if (isFinite(video.duration) && video.duration > 0) {
+                    console.log('✅ Setting duration from durationchange:', video.duration)
+                    setDuration(video.duration)
+                    setTrimRange({ start: 0, end: video.duration })
+                    setIsVideoReady(true)
+                    addRecordedVideoClip(video.duration)
                 }
             }
 
@@ -262,32 +296,30 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                 const immediateTimer = setTimeout(() => {
                     console.log('Immediate fallback: checking video state')
                     if (video.readyState >= 1 && isFinite(video.duration) && video.duration > 0) {
-                        console.log('Immediate fallback: Video loaded')
+                        console.log('✅ Immediate fallback: Video loaded with duration', video.duration)
                         setDuration(video.duration)
                         setTrimRange({ start: 0, end: video.duration })
                         setIsVideoReady(true)
+                        addRecordedVideoClip(video.duration)
                     } else {
-                        console.log('Immediate fallback: Video not ready, forcing ready state')
-                        setForceReady(true)
+                        console.log('⚠️ Immediate fallback: Video not ready yet, will wait for durationchange event')
+                        // Set ready but don't add clip yet
                         setIsVideoReady(true)
-                        setDuration(60)
-                        setTrimRange({ start: 0, end: 60 })
                     }
                 }, 500)
 
                 // Longer fallback: try to load the video after a longer delay
                 const fallbackTimer = setTimeout(() => {
                     if (video.readyState >= 1 && isFinite(video.duration) && video.duration > 0) {
-                        console.log('Longer fallback: Video loaded after delay')
+                        console.log('✅ Longer fallback: Video loaded with duration', video.duration)
                         setDuration(video.duration)
                         setTrimRange({ start: 0, end: video.duration })
                         setIsVideoReady(true)
+                        addRecordedVideoClip(video.duration)
                     } else {
-                        console.log('Longer fallback: Video not ready, forcing ready state')
-                        setForceReady(true)
+                        console.warn('⚠️ Longer fallback: Video still not ready, will wait for durationchange event')
+                        // Set ready but don't add clip yet
                         setIsVideoReady(true)
-                        setDuration(60)
-                        setTrimRange({ start: 0, end: 60 })
                     }
                 }, 1500)
             }
@@ -295,6 +327,7 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
             video.addEventListener('loadstart', handleLoadStart)
             video.addEventListener('loadedmetadata', handleLoadedMetadata)
             video.addEventListener('loadeddata', handleLoadedData)
+            video.addEventListener('durationchange', handleDurationChange)
             video.addEventListener('timeupdate', handleTimeUpdate)
             video.addEventListener('canplay', handleCanPlay)
             video.addEventListener('error', handleError)
@@ -306,6 +339,7 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                 video.removeEventListener('loadstart', handleLoadStart)
                 video.removeEventListener('loadedmetadata', handleLoadedMetadata)
                 video.removeEventListener('loadeddata', handleLoadedData)
+                video.removeEventListener('durationchange', handleDurationChange)
                 video.removeEventListener('timeupdate', handleTimeUpdate)
                 video.removeEventListener('canplay', handleCanPlay)
                 video.removeEventListener('error', handleError)
@@ -778,7 +812,6 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                         onBackgroundChange={setBackgroundSettings}
                         clips={clips}
                         onAddClip={handleAddClip}
-                        onRemoveClip={handleRemoveClip}
                         onUpdateClip={handleUpdateClip}
                         webcamOverlayPosition={webcamOverlayPosition}
                         setWebcamOverlayPosition={setWebcamOverlayPosition}
@@ -806,6 +839,7 @@ export default function VideoEditor({ videoUrl, onSave, onCancel }: VideoEditorP
                     onUpdateClip={handleUpdateClip}
                     onDeleteClip={handleDeleteClip}
                     onDuplicateClip={handleDuplicateClip}
+                    onAddClip={handleAddClip}
                 />
             </div>
 

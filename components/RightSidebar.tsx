@@ -94,6 +94,7 @@ export default function RightSidebar({
 }: RightSidebarProps) {
     const [activeTab, setActiveTab] = useState('background')
     const [showAddOverlay, setShowAddOverlay] = useState(false)
+    const [selectedBackgroundTab, setSelectedBackgroundTab] = useState<'wallpaper' | 'gradient' | 'color' | 'image'>(backgroundSettings.type)
     const [newOverlay, setNewOverlay] = useState({
         type: 'text' as 'text' | 'image',
         content: '',
@@ -144,8 +145,8 @@ export default function RightSidebar({
                 {['wallpaper', 'gradient', 'color', 'image'].map((type) => (
                     <button
                         key={type}
-                        onClick={() => onBackgroundChange({ ...backgroundSettings, type: type as any })}
-                        className={`px-3 py-1 text-xs rounded-md transition-colors ${backgroundSettings.type === type
+                        onClick={() => setSelectedBackgroundTab(type as any)}
+                        className={`px-3 py-1 text-xs rounded-md transition-colors ${selectedBackgroundTab === type
                             ? 'bg-purple-600 text-white'
                             : 'text-gray-400 hover:text-white hover:bg-gray-600'
                             }`}
@@ -156,7 +157,7 @@ export default function RightSidebar({
             </div>
 
             {/* Wallpaper Section */}
-            {backgroundSettings.type === 'wallpaper' && (
+            {selectedBackgroundTab === 'wallpaper' && (
                 <div>
                     <div className="flex items-center gap-2 mb-2">
                         <Square className="h-4 w-4" />
@@ -168,8 +169,8 @@ export default function RightSidebar({
                         {Array.from({ length: 15 }, (_, i) => (
                             <div
                                 key={i}
-                                onClick={() => onBackgroundChange({ ...backgroundSettings, wallpaperIndex: i })}
-                                className={`aspect-square rounded cursor-pointer border transition-all duration-200 group ${backgroundSettings.wallpaperIndex === i
+                                onClick={() => onBackgroundChange({ ...backgroundSettings, type: 'wallpaper', wallpaperIndex: i })}
+                                className={`aspect-square rounded cursor-pointer border transition-all duration-200 group ${backgroundSettings.type === 'wallpaper' && backgroundSettings.wallpaperIndex === i
                                     ? 'border-purple-500 scale-105 shadow-lg'
                                     : 'border-transparent hover:border-purple-300 hover:scale-105 hover:shadow-md'
                                     }`}
@@ -193,7 +194,7 @@ export default function RightSidebar({
             )}
 
             {/* Gradient Section */}
-            {backgroundSettings.type === 'gradient' && (
+            {selectedBackgroundTab === 'gradient' && (
                 <div>
                     <div className="flex items-center gap-2 mb-2">
                         <Square className="h-4 w-4" />
@@ -209,6 +210,7 @@ export default function RightSidebar({
                                     value={backgroundSettings.gradientColors[0] || '#ff6b6b'}
                                     onChange={(e) => onBackgroundChange({
                                         ...backgroundSettings,
+                                        type: 'gradient',
                                         gradientColors: [e.target.value, backgroundSettings.gradientColors[1] || '#4ecdc4']
                                     })}
                                     className="w-6 h-6 rounded border border-gray-600 cursor-pointer transition-all duration-200 hover:scale-110 hover:shadow-md"
@@ -218,6 +220,7 @@ export default function RightSidebar({
                                     value={backgroundSettings.gradientColors[0] || '#ff6b6b'}
                                     onChange={(e) => onBackgroundChange({
                                         ...backgroundSettings,
+                                        type: 'gradient',
                                         gradientColors: [e.target.value, backgroundSettings.gradientColors[1] || '#4ecdc4']
                                     })}
                                     className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
@@ -233,6 +236,7 @@ export default function RightSidebar({
                                     value={backgroundSettings.gradientColors[1] || '#4ecdc4'}
                                     onChange={(e) => onBackgroundChange({
                                         ...backgroundSettings,
+                                        type: 'gradient',
                                         gradientColors: [backgroundSettings.gradientColors[0] || '#ff6b6b', e.target.value]
                                     })}
                                     className="w-6 h-6 rounded border border-gray-600 cursor-pointer transition-all duration-200 hover:scale-110 hover:shadow-md"
@@ -242,6 +246,7 @@ export default function RightSidebar({
                                     value={backgroundSettings.gradientColors[1] || '#4ecdc4'}
                                     onChange={(e) => onBackgroundChange({
                                         ...backgroundSettings,
+                                        type: 'gradient',
                                         gradientColors: [backgroundSettings.gradientColors[0] || '#ff6b6b', e.target.value]
                                     })}
                                     className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
@@ -253,7 +258,7 @@ export default function RightSidebar({
             )}
 
             {/* Color Section */}
-            {backgroundSettings.type === 'color' && (
+            {selectedBackgroundTab === 'color' && (
                 <div>
                     <div className="flex items-center gap-2 mb-2">
                         <Square className="h-4 w-4" />
@@ -266,13 +271,13 @@ export default function RightSidebar({
                             <input
                                 type="color"
                                 value={backgroundSettings.backgroundColor}
-                                onChange={(e) => onBackgroundChange({ ...backgroundSettings, backgroundColor: e.target.value })}
+                                onChange={(e) => onBackgroundChange({ ...backgroundSettings, type: 'color', backgroundColor: e.target.value })}
                                 className="w-6 h-6 rounded border border-gray-600 cursor-pointer transition-all duration-200 hover:scale-110 hover:shadow-md"
                             />
                             <input
                                 type="text"
                                 value={backgroundSettings.backgroundColor}
-                                onChange={(e) => onBackgroundChange({ ...backgroundSettings, backgroundColor: e.target.value })}
+                                onChange={(e) => onBackgroundChange({ ...backgroundSettings, type: 'color', backgroundColor: e.target.value })}
                                 className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
                             />
                         </div>
@@ -281,7 +286,7 @@ export default function RightSidebar({
             )}
 
             {/* Image Section */}
-            {backgroundSettings.type === 'image' && (
+            {selectedBackgroundTab === 'image' && (
                 <div>
                     <div className="flex items-center gap-2 mb-2">
                         <Square className="h-4 w-4" />
