@@ -23,6 +23,7 @@ import {
 import MultiTrackTimeline from './MultiTrackTimeline'
 import RightSidebar from './RightSidebar'
 import ExportDialog, { ExportOptions } from './ExportDialog'
+import VideoAnnotation, { Annotation } from './VideoAnnotation'
 import { exportVideo as processVideoExport, downloadBlob } from '@/lib/videoExporter'
 
 interface VideoEditorProps {
@@ -49,6 +50,8 @@ interface Overlay {
     endTime: number
 }
 
+
+
 export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: VideoEditorProps) {
     const videoRef = useRef<HTMLVideoElement>(null)
     const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -57,6 +60,13 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
     const [duration, setDuration] = useState(0)
     const [trimRange, setTrimRange] = useState<TrimRange>({ start: 0, end: 0 })
     const [overlays, setOverlays] = useState<Overlay[]>([])
+    const [annotations, setAnnotations] = useState<Annotation[]>([])
+    const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
+    const [selectedAnnotationTool, setSelectedAnnotationTool] = useState<Annotation['type'] | null>(null)
+    const [annotationColor, setAnnotationColor] = useState('#ff0000')
+    const [annotationStrokeWidth, setAnnotationStrokeWidth] = useState(3)
+    const [annotationFontSize, setAnnotationFontSize] = useState(24)
+    const [videoContainerRef, setVideoContainerRef] = useState<HTMLDivElement | null>(null)
     const [isProcessing, setIsProcessing] = useState(false)
     const [isVideoReady, setIsVideoReady] = useState(false)
     const [videoLoadTimeout, setVideoLoadTimeout] = useState<NodeJS.Timeout | null>(null)
@@ -467,6 +477,123 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
         setOverlays(prev => prev.filter(overlay => overlay.id !== id))
     }
 
+    const addAnnotation = (annotation: Annotation) => {
+        console.log('Adding annotation:', annotation)
+        setAnnotations(prev => [...prev, annotation])
+
+        // Also add to clips for timeline display
+        const annotationClip = {
+            id: annotation.id,
+            type: 'effect' as const,
+            name: annotation.type === 'text' ? `Text: ${annotation.content?.substring(0, 20) || 'Text'}` : `${annotation.type.charAt(0).toUpperCase() + annotation.type.slice(1)}`,
+            duration: annotation.endTime - annotation.startTime,
+            startTime: annotation.startTime,
+            endTime: annotation.endTime,
+            trackId: 'effect-2',
+            color: annotation.color,
+            muted: false,
+            locked: false
+        }
+        setClips(prev => [...prev, annotationClip])
+
+        // Clear tool selection after adding
+        setSelectedAnnotationTool(null)
+    }
+
+    const updateAnnotation = (id: string, updates: Partial<Annotation>) => {
+        setAnnotations(prev => prev.map(ann =>
+            ann.id === id ? { ...ann, ...updates } : ann
+        ))
+
+        // Update corresponding clip
+        setClips(prev => prev.map(clip => {
+            if (clip.id === id) {
+                const annotation = annotations.find(a => a.id === id)
+                if (annotation) {
+                    return {
+                        ...clip,
+                        startTime: updates.startTime ?? clip.startTime,
+                        endTime: updates.endTime ?? clip.endTime,
+                        duration: (updates.endTime ?? clip.endTime) - (updates.startTime ?? clip.startTime),
+                        color: updates.color ?? clip.color
+                    }
+                }
+            }
+            return clip
+        }))
+    }
+
+    const removeAnnotation = (id: string) => {
+        setAnnotations(prev => prev.filter(ann => ann.id !== id))
+        setClips(prev => prev.filter(clip => clip.id !== id))
+        if (selectedAnnotation === id) {
+            setSelectedAnnotation(null)
+        }
+    }
+
+    const handleAnnotationMouseDown = (e: React.MouseEvent<HTMLDivElement>, annotationId: string) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setSelectedAnnotation(annotationId)
+
+        const annotation = annotations.find(a => a.id === annotationId)
+        if (!annotation) return
+
+        const startX = e.clientX
+        const startY = e.clientY
+        const startLeft = annotation.x
+        const startTop = annotation.y
+
+        const handleMouseMove = (e: MouseEvent) => {
+            const deltaX = ((e.clientX - startX) / window.innerWidth) * 100
+            const deltaY = ((e.clientY - startY) / window.innerHeight) * 100
+
+            updateAnnotation(annotationId, {
+                x: Math.max(0, Math.min(100, startLeft + deltaX)),
+                y: Math.max(0, Math.min(100, startTop + deltaY))
+            })
+        }
+
+        const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove)
+            document.removeEventListener('mouseup', handleMouseUp)
+        }
+
+        document.addEventListener('mousemove', handleMouseMove)
+        document.addEventListener('mouseup', handleMouseUp)
+    }
+
+    const handleAnnotationResize = (e: React.MouseEvent<HTMLDivElement>, annotationId: string) => {
+        e.preventDefault()
+        e.stopPropagation()
+
+        const annotation = annotations.find(a => a.id === annotationId)
+        if (!annotation || !annotation.width || !annotation.height) return
+
+        const startX = e.clientX
+        const startY = e.clientY
+        const startWidth = annotation.width
+        const startHeight = annotation.height
+
+        const handleMouseMove = (e: MouseEvent) => {
+            const deltaX = e.clientX - startX
+            const deltaY = e.clientY - startY
+
+            updateAnnotation(annotationId, {
+                width: Math.max(50, startWidth + deltaX),
+                height: Math.max(30, startHeight + deltaY)
+            })
+        }
+
+        const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove)
+            document.removeEventListener('mouseup', handleMouseUp)
+        }
+
+        document.addEventListener('mousemove', handleMouseMove)
+        document.addEventListener('mouseup', handleMouseUp)
+    }
+
     const handleExportClick = () => {
         setShowExportDialog(true)
     }
@@ -492,7 +619,12 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                 backgroundSettings: {
                     type: backgroundSettings.type,
                     padding: backgroundSettings.padding,
-                    borderRadius: backgroundSettings.borderRadius
+                    borderRadius: backgroundSettings.borderRadius,
+                    backgroundColor: backgroundSettings.backgroundColor,
+                    gradientColors: backgroundSettings.gradientColors,
+                    wallpaperIndex: backgroundSettings.wallpaperIndex,
+                    wallpaperUrl: backgroundSettings.wallpaperUrl,
+                    blurAmount: backgroundSettings.blurAmount
                 },
                 onProgress: (progress) => {
                     console.log('Export progress:', Math.round(progress * 100) + '%')
@@ -729,6 +861,16 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                     <div className="flex items-center gap-1">
                         <span className="text-white font-medium text-sm">Video Recording</span>
                         <span className="text-gray-400 text-sm">.screenstudio</span>
+                        {/* Video Info Overlay - Top Left */}
+                        <div className="flex gap-2 z-20">
+                            <div className="bg-black/60 backdrop-blur-md text-white text-xs px-2.5 py-1.5 rounded-lg border border-white/10 shadow-lg">
+                                <Clock className="h-3 w-3 inline mr-1.5" />
+                                {formatTime(currentTime)} / {formatTime(duration)}
+                            </div>
+                            <div className="bg-black/60 backdrop-blur-md text-white text-xs px-2.5 py-1.5 rounded-lg border border-white/10 shadow-lg">
+                                {aspectRatio}
+                            </div>
+                        </div>
                     </div>
 
                     {/* Right Section */}
@@ -784,7 +926,7 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
             </div>
 
             {/* Main Content Area */}
-            <div className="flex-1 flex min-h-0">
+            /<div className="flex-1 flex min-h-0">
                 {/* Video Preview - Left Side */}
                 <div className="flex-1 bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 flex items-center justify-center min-h-0 p-6 relative overflow-hidden">
                     {/* Ambient Background Effect */}
@@ -826,15 +968,14 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
 
                         {/* Content Layer (Video) */}
                         <div
-                            className="w-full h-full relative"
+                            className="w-full h-full relative bg-orange-500"
                             style={{
                                 padding: backgroundSettings.padding > 0 ? `${backgroundSettings.padding}%` : '0'
                             }}
+                            
                         >
-                            <video
-                                ref={videoRef}
-                                src={videoUrl}
-                                className="w-full h-full object-cover transition-all duration-300 hover:brightness-105"
+                            <div
+                                className="w-full h-full object-cover transition-all duration-300 hover:brightness-105 bg-green-500 p-2 overflow-hidden"
                                 style={{
                                     aspectRatio: aspectRatio === '16:9' ? '16/9' :
                                         aspectRatio === '4:3' ? '4/3' :
@@ -843,41 +984,97 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                                                     aspectRatio === '9:16' ? '9/16' : '16/9',
                                     borderRadius: `${backgroundSettings.borderRadius}px`
                                 }}
-                                onMouseEnter={() => setIsDragging(true)}
-                                onMouseLeave={() => setIsDragging(false)}
-                                onLoadStart={() => console.log('Video load started')}
-                                onLoadedMetadata={() => {
-                                    console.log('Video metadata loaded')
-                                    if (videoRef.current && isFinite(videoRef.current.duration) && videoRef.current.duration > 0) {
-                                        setDuration(videoRef.current.duration)
-                                        setTrimRange({ start: 0, end: videoRef.current.duration })
+                            >
+                                <video
+                                    ref={videoRef}
+                                    src={videoUrl}
+                                    
+                                    onMouseEnter={() => setIsDragging(true)}
+                                    onMouseLeave={() => setIsDragging(false)}
+                                    onLoadStart={() => console.log('Video load started')}
+                                    onLoadedMetadata={() => {
+                                        console.log('Video metadata loaded')
+                                        if (videoRef.current && isFinite(videoRef.current.duration) && videoRef.current.duration > 0) {
+                                            setDuration(videoRef.current.duration)
+                                            setTrimRange({ start: 0, end: videoRef.current.duration })
+                                            setIsVideoReady(true)
+                                        }
+                                    }}
+                                    onCanPlay={() => {
+                                        console.log('Video can play')
                                         setIsVideoReady(true)
-                                    }
-                                }}
-                                onCanPlay={() => {
-                                    console.log('Video can play')
-                                    setIsVideoReady(true)
-                                }}
-                                onError={(e) => {
-                                    console.error('Video error:', e)
-                                    setForceReady(true)
-                                    setIsVideoReady(true)
-                                }}
-                            />
+                                    }}
+                                    onError={(e) => {
+                                        console.error('Video error:', e)
+                                        setForceReady(true)
+                                        setIsVideoReady(true)
+                                    }}
+                                />
 
-                            {/* Video Info Overlay - Top Left */}
-                            <div className="absolute top-3 left-3 flex gap-2 z-20">
-                                <div className="bg-black/60 backdrop-blur-md text-white text-xs px-2.5 py-1.5 rounded-lg border border-white/10 shadow-lg">
-                                    <Clock className="h-3 w-3 inline mr-1.5" />
-                                    {formatTime(currentTime)} / {formatTime(duration)}
+                                 {/* Enhanced Webcam Overlay */}
+                            {webcamVideoUrl && webcamSettings.visible && (
+                                <div
+                                    className="absolute bg-black overflow-hidden transition-all duration-300 hover:scale-105 group"
+                                    style={{
+                                        left: `${webcamOverlayPosition.x}%`,
+                                        top: `${webcamOverlayPosition.y}%`,
+                                        width: webcamSettings.shape === 'square' ? `${Math.min(webcamOverlaySize.width, webcamOverlaySize.height)}px` : `${webcamOverlaySize.width}px`,
+                                        height: webcamSettings.shape === 'square' ? `${Math.min(webcamOverlaySize.width, webcamOverlaySize.height)}px` : `${webcamOverlaySize.height}px`,
+                                        cursor: 'move',
+                                        zIndex: 15,
+                                        borderRadius: webcamSettings.shape === 'circle' ? '50%' : '12px',
+                                        border: `${webcamSettings.borderWidth}px solid ${webcamSettings.borderColor}`,
+                                        boxShadow: webcamSettings.shadowIntensity > 0
+                                            ? `0 ${Math.round(webcamSettings.shadowIntensity * 0.3)}px ${Math.round(webcamSettings.shadowIntensity * 0.8)}px ${Math.round(webcamSettings.shadowIntensity * 0.2)}px rgba(0, 0, 0, ${Math.min(webcamSettings.shadowIntensity / 100 * 0.5, 0.5)})`
+                                            : '0 4px 12px rgba(0, 0, 0, 0.3)'
+                                    }}
+                                    onMouseDown={handleMouseDown}
+                                >
+                                    <video
+                                        ref={webcamVideoRef}
+                                        src={webcamVideoUrl}
+                                        className="w-full h-full object-cover"
+                                        muted
+                                        onTimeUpdate={() => {
+                                            if (videoRef.current && webcamVideoRef.current) {
+                                                const timeDiff = Math.abs(videoRef.current.currentTime - webcamVideoRef.current.currentTime)
+                                                if (timeDiff > 0.1) {
+                                                    webcamVideoRef.current.currentTime = videoRef.current.currentTime
+                                                }
+                                            }
+                                        }}
+                                    />
+                                    {/* Resize Handle */}
+                                    <div
+                                        className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize hover:scale-110 transition-all duration-200 opacity-0 group-hover:opacity-100"
+                                        style={{
+                                            backgroundColor: webcamSettings.borderColor,
+                                            borderRadius: webcamSettings.shape === 'circle' ? '50%' : '0 0 12px 0'
+                                        }}
+                                        onMouseDown={handleResizeMouseDown}
+                                    >
+                                        <div className="absolute inset-0 flex items-center justify-center">
+                                            <div className="w-2 h-2 border-r-2 border-b-2 border-white/80"></div>
+                                        </div>
+                                    </div>
+                                    {/* Label */}
+                                    <div className="absolute top-2 left-2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                        <span className="font-medium">Webcam</span>
+                                    </div>
+                                    {/* Corner Indicators */}
+                                    <div className="absolute top-1 left-1 w-3 h-3 border-t-2 border-l-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
+                                    <div className="absolute top-1 right-1 w-3 h-3 border-t-2 border-r-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
+                                    <div className="absolute bottom-1 left-1 w-3 h-3 border-b-2 border-l-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
                                 </div>
-                                <div className="bg-black/60 backdrop-blur-md text-white text-xs px-2.5 py-1.5 rounded-lg border border-white/10 shadow-lg">
-                                    {aspectRatio}
-                                </div>
+                            )}
+
                             </div>
+                            
+
+                            
 
                             {/* Playback Controls Overlay - Center (appears on hover) */}
-                            <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300 z-20 pointer-events-none">
+                            {/* <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300 z-20 pointer-events-none">
                                 <div className="bg-black/70 backdrop-blur-xl rounded-full p-4 shadow-2xl border border-white/20 pointer-events-auto">
                                     <Button
                                         variant="ghost"
@@ -892,7 +1089,28 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                                         )}
                                     </Button>
                                 </div>
-                            </div>
+                            </div> */}
+
+                            {/* Video Annotation Layer */}
+                            {videoRef.current && (
+                                <VideoAnnotation
+                                    videoRef={videoRef}
+                                    currentTime={currentTime}
+                                    annotations={annotations}
+                                    onAddAnnotation={addAnnotation}
+                                    onUpdateAnnotation={updateAnnotation}
+                                    onRemoveAnnotation={removeAnnotation}
+                                    selectedTool={selectedAnnotationTool}
+                                    toolColor={annotationColor}
+                                    strokeWidth={annotationStrokeWidth}
+                                    fontSize={annotationFontSize}
+                                    containerWidth={videoRef.current.videoWidth || 1920}
+                                    containerHeight={videoRef.current.videoHeight || 1080}
+                                />
+                            )}
+
+                           
+
                         </div>
 
                         {/* Loading State with Enhanced Animation */}
@@ -932,62 +1150,244 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                             </div>
                         )}
 
-                        {/* Enhanced Webcam Overlay */}
-                        {webcamVideoUrl && webcamSettings.visible && (
-                            <div
-                                className="absolute bg-black overflow-hidden transition-all duration-300 hover:scale-105 group"
-                                style={{
-                                    left: `${webcamOverlayPosition.x}%`,
-                                    top: `${webcamOverlayPosition.y}%`,
-                                    width: webcamSettings.shape === 'square' ? `${Math.min(webcamOverlaySize.width, webcamOverlaySize.height)}px` : `${webcamOverlaySize.width}px`,
-                                    height: webcamSettings.shape === 'square' ? `${Math.min(webcamOverlaySize.width, webcamOverlaySize.height)}px` : `${webcamOverlaySize.height}px`,
-                                    cursor: 'move',
-                                    zIndex: 15,
-                                    borderRadius: webcamSettings.shape === 'circle' ? '50%' : '12px',
-                                    border: `${webcamSettings.borderWidth}px solid ${webcamSettings.borderColor}`,
-                                    boxShadow: webcamSettings.shadowIntensity > 0
-                                        ? `0 ${Math.round(webcamSettings.shadowIntensity * 0.3)}px ${Math.round(webcamSettings.shadowIntensity * 0.8)}px ${Math.round(webcamSettings.shadowIntensity * 0.2)}px rgba(0, 0, 0, ${Math.min(webcamSettings.shadowIntensity / 100 * 0.5, 0.5)})`
-                                        : '0 4px 12px rgba(0, 0, 0, 0.3)'
-                                }}
-                                onMouseDown={handleMouseDown}
-                            >
-                                <video
-                                    ref={webcamVideoRef}
-                                    src={webcamVideoUrl}
-                                    className="w-full h-full object-cover"
-                                    muted
-                                    onTimeUpdate={() => {
-                                        if (videoRef.current && webcamVideoRef.current) {
-                                            const timeDiff = Math.abs(videoRef.current.currentTime - webcamVideoRef.current.currentTime)
-                                            if (timeDiff > 0.1) {
-                                                webcamVideoRef.current.currentTime = videoRef.current.currentTime
-                                            }
-                                        }
-                                    }}
-                                />
-                                {/* Resize Handle */}
-                                <div
-                                    className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize hover:scale-110 transition-all duration-200 opacity-0 group-hover:opacity-100"
-                                    style={{
-                                        backgroundColor: webcamSettings.borderColor,
-                                        borderRadius: webcamSettings.shape === 'circle' ? '50%' : '0 0 12px 0'
-                                    }}
-                                    onMouseDown={handleResizeMouseDown}
-                                >
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                        <div className="w-2 h-2 border-r-2 border-b-2 border-white/80"></div>
+                        {/* webcamb here  */}
+                        {/* Annotations Rendering */}
+                        {annotations.map(annotation => {
+                            const isVisible = currentTime >= annotation.startTime && currentTime <= annotation.endTime
+                            const isSelected = selectedAnnotation === annotation.id
+
+                            if (!isVisible) return null
+
+                            // Text annotation
+                            if (annotation.type === 'text') {
+                                return (
+                                    <div
+                                        key={annotation.id}
+                                        className={`absolute cursor-move transition-all duration-200 group ${isSelected ? 'ring-2 ring-purple-500 scale-105 z-30' : 'hover:scale-105 z-20'
+                                            }`}
+                                        style={{
+                                            left: `${annotation.x}%`,
+                                            top: `${annotation.y}%`,
+                                            width: annotation.width ? `${annotation.width}px` : 'auto',
+                                            minWidth: '100px'
+                                        }}
+                                        onMouseDown={(e) => handleAnnotationMouseDown(e, annotation.id)}
+                                    >
+                                        <div
+                                            className="px-3 py-2 rounded-lg backdrop-blur-sm border-2 shadow-lg"
+                                            style={{
+                                                color: annotation.color,
+                                                fontSize: `${annotation.fontSize || 24}px`,
+                                                fontWeight: annotation.fontWeight || 'bold',
+                                                backgroundColor: annotation.backgroundColor || 'rgba(0, 0, 0, 0.5)',
+                                                borderColor: isSelected ? annotation.color : 'transparent'
+                                            }}
+                                        >
+                                            {annotation.content}
+                                        </div>
+                                        {isSelected && (
+                                            <>
+                                                <div
+                                                    className="absolute bottom-0 right-0 w-4 h-4 bg-purple-500 rounded-full cursor-se-resize"
+                                                    onMouseDown={(e) => handleAnnotationResize(e, annotation.id)}
+                                                />
+                                                <Button
+                                                    size="sm"
+                                                    variant="destructive"
+                                                    className="absolute -top-2 -right-2 h-5 w-5 p-0 rounded-full text-xs"
+                                                    onClick={() => removeAnnotation(annotation.id)}
+                                                >
+                                                    ×
+                                                </Button>
+                                            </>
+                                        )}
                                     </div>
-                                </div>
-                                {/* Label */}
-                                <div className="absolute top-2 left-2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                    <span className="font-medium">Webcam</span>
-                                </div>
-                                {/* Corner Indicators */}
-                                <div className="absolute top-1 left-1 w-3 h-3 border-t-2 border-l-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
-                                <div className="absolute top-1 right-1 w-3 h-3 border-t-2 border-r-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
-                                <div className="absolute bottom-1 left-1 w-3 h-3 border-b-2 border-l-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
-                            </div>
-                        )}
+                                )
+                            }
+
+                            // Arrow annotation
+                            if (annotation.type === 'arrow') {
+                                return (
+                                    <svg
+                                        key={annotation.id}
+                                        className={`absolute pointer-events-none ${isSelected ? 'z-30' : 'z-20'}`}
+                                        style={{
+                                            left: `${annotation.x}%`,
+                                            top: `${annotation.y}%`,
+                                            width: '100px',
+                                            height: '100px'
+                                        }}
+                                    >
+                                        <defs>
+                                            <marker
+                                                id={`arrowhead-${annotation.id}`}
+                                                markerWidth="10"
+                                                markerHeight="10"
+                                                refX="9"
+                                                refY="3"
+                                                orient="auto"
+                                            >
+                                                <polygon
+                                                    points="0 0, 10 3, 0 6"
+                                                    fill={annotation.color}
+                                                />
+                                            </marker>
+                                        </defs>
+                                        <line
+                                            x1="10"
+                                            y1="10"
+                                            x2="90"
+                                            y2="90"
+                                            stroke={annotation.color}
+                                            strokeWidth={annotation.strokeWidth || 3}
+                                            markerEnd={`url(#arrowhead-${annotation.id})`}
+                                        />
+                                    </svg>
+                                )
+                            }
+
+                            // Rectangle annotation
+                            if (annotation.type === 'rectangle') {
+                                return (
+                                    <div
+                                        key={annotation.id}
+                                        className={`absolute cursor-move transition-all duration-200 group ${isSelected ? 'ring-2 ring-purple-500 scale-105 z-30' : 'hover:scale-105 z-20'
+                                            }`}
+                                        style={{
+                                            left: `${annotation.x}%`,
+                                            top: `${annotation.y}%`,
+                                            width: `${annotation.width || 200}px`,
+                                            height: `${annotation.height || 100}px`,
+                                            border: `${annotation.strokeWidth || 3}px solid ${annotation.color}`,
+                                            borderRadius: '8px',
+                                            backgroundColor: 'transparent'
+                                        }}
+                                        onMouseDown={(e) => handleAnnotationMouseDown(e, annotation.id)}
+                                    >
+                                        {isSelected && (
+                                            <>
+                                                <div
+                                                    className="absolute bottom-0 right-0 w-4 h-4 bg-purple-500 rounded-full cursor-se-resize"
+                                                    onMouseDown={(e) => handleAnnotationResize(e, annotation.id)}
+                                                />
+                                                <Button
+                                                    size="sm"
+                                                    variant="destructive"
+                                                    className="absolute -top-2 -right-2 h-5 w-5 p-0 rounded-full text-xs"
+                                                    onClick={() => removeAnnotation(annotation.id)}
+                                                >
+                                                    ×
+                                                </Button>
+                                            </>
+                                        )}
+                                    </div>
+                                )
+                            }
+
+                            // Circle annotation
+                            if (annotation.type === 'circle') {
+                                const size = Math.min(annotation.width || 150, annotation.height || 150)
+                                return (
+                                    <div
+                                        key={annotation.id}
+                                        className={`absolute cursor-move transition-all duration-200 group ${isSelected ? 'ring-2 ring-purple-500 scale-105 z-30' : 'hover:scale-105 z-20'
+                                            }`}
+                                        style={{
+                                            left: `${annotation.x}%`,
+                                            top: `${annotation.y}%`,
+                                            width: `${size}px`,
+                                            height: `${size}px`,
+                                            border: `${annotation.strokeWidth || 3}px solid ${annotation.color}`,
+                                            borderRadius: '50%',
+                                            backgroundColor: 'transparent'
+                                        }}
+                                        onMouseDown={(e) => handleAnnotationMouseDown(e, annotation.id)}
+                                    >
+                                        {isSelected && (
+                                            <>
+                                                <div
+                                                    className="absolute bottom-0 right-0 w-4 h-4 bg-purple-500 rounded-full cursor-se-resize"
+                                                    onMouseDown={(e) => handleAnnotationResize(e, annotation.id)}
+                                                />
+                                                <Button
+                                                    size="sm"
+                                                    variant="destructive"
+                                                    className="absolute -top-2 -right-2 h-5 w-5 p-0 rounded-full text-xs"
+                                                    onClick={() => removeAnnotation(annotation.id)}
+                                                >
+                                                    ×
+                                                </Button>
+                                            </>
+                                        )}
+                                    </div>
+                                )
+                            }
+
+                            // Line annotation
+                            if (annotation.type === 'line') {
+                                return (
+                                    <svg
+                                        key={annotation.id}
+                                        className={`absolute pointer-events-none ${isSelected ? 'z-30' : 'z-20'}`}
+                                        style={{
+                                            left: `${annotation.x}%`,
+                                            top: `${annotation.y}%`,
+                                            width: '150px',
+                                            height: '5px'
+                                        }}
+                                    >
+                                        <line
+                                            x1="0"
+                                            y1="2"
+                                            x2="150"
+                                            y2="2"
+                                            stroke={annotation.color}
+                                            strokeWidth={annotation.strokeWidth || 3}
+                                        />
+                                    </svg>
+                                )
+                            }
+
+                            // Highlight annotation
+                            if (annotation.type === 'highlight') {
+                                return (
+                                    <div
+                                        key={annotation.id}
+                                        className={`absolute cursor-move transition-all duration-200 group ${isSelected ? 'ring-2 ring-purple-500 scale-105 z-30' : 'hover:scale-105 z-20'
+                                            }`}
+                                        style={{
+                                            left: `${annotation.x}%`,
+                                            top: `${annotation.y}%`,
+                                            width: `${annotation.width || 200}px`,
+                                            height: `${annotation.height || 100}px`,
+                                            backgroundColor: annotation.backgroundColor || `${annotation.color}40`,
+                                            borderRadius: '8px',
+                                            border: `2px solid ${annotation.color}`
+                                        }}
+                                        onMouseDown={(e) => handleAnnotationMouseDown(e, annotation.id)}
+                                    >
+                                        {isSelected && (
+                                            <>
+                                                <div
+                                                    className="absolute bottom-0 right-0 w-4 h-4 bg-purple-500 rounded-full cursor-se-resize"
+                                                    onMouseDown={(e) => handleAnnotationResize(e, annotation.id)}
+                                                />
+                                                <Button
+                                                    size="sm"
+                                                    variant="destructive"
+                                                    className="absolute -top-2 -right-2 h-5 w-5 p-0 rounded-full text-xs"
+                                                    onClick={() => removeAnnotation(annotation.id)}
+                                                >
+                                                    ×
+                                                </Button>
+                                            </>
+                                        )}
+                                    </div>
+                                )
+                            }
+
+                            return null
+                        })}
 
                         {/* Enhanced Overlays */}
                         {overlays.map(overlay => (
@@ -1054,6 +1454,18 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                         setWebcamOverlaySize={setWebcamOverlaySize}
                         webcamSettings={webcamSettings}
                         onWebcamSettingsChange={setWebcamSettings}
+                        annotations={annotations}
+                        onAddAnnotation={addAnnotation}
+                        onUpdateAnnotation={updateAnnotation}
+                        onRemoveAnnotation={removeAnnotation}
+                        selectedAnnotationTool={selectedAnnotationTool}
+                        onAnnotationToolChange={setSelectedAnnotationTool}
+                        annotationColor={annotationColor}
+                        onAnnotationColorChange={setAnnotationColor}
+                        annotationStrokeWidth={annotationStrokeWidth}
+                        onAnnotationStrokeWidthChange={setAnnotationStrokeWidth}
+                        annotationFontSize={annotationFontSize}
+                        onAnnotationFontSizeChange={setAnnotationFontSize}
                     />
                 </div>
             </div>

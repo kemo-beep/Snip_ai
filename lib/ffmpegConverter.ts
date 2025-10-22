@@ -36,8 +36,8 @@ export async function loadFFmpeg(onProgress?: (progress: number) => void): Promi
             onProgress?.(progress)
         })
 
-        // Load FFmpeg core
-        const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm'
+        // Load FFmpeg core from CDN
+        const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
         
         await ffmpegInstance.load({
             coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),

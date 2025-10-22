@@ -56,6 +56,24 @@ interface Clip {
     locked?: boolean
 }
 
+interface Annotation {
+    id: string
+    type: 'text' | 'arrow' | 'rectangle' | 'circle' | 'line' | 'highlight' | 'freehand'
+    x: number
+    y: number
+    width?: number
+    height?: number
+    content?: string
+    fontSize?: number
+    fontWeight?: string
+    color: string
+    backgroundColor?: string
+    strokeWidth?: number
+    startTime: number
+    endTime: number
+    points?: { x: number, y: number }[]
+}
+
 interface RightSidebarProps {
     overlays: Array<{
         id: string
@@ -100,6 +118,18 @@ interface RightSidebarProps {
         borderColor: string
     }
     onWebcamSettingsChange: (settings: any) => void
+    annotations?: Annotation[]
+    onAddAnnotation?: (annotation: Annotation) => void
+    onUpdateAnnotation?: (id: string, updates: Partial<Annotation>) => void
+    onRemoveAnnotation?: (id: string) => void
+    selectedAnnotationTool?: Annotation['type'] | null
+    onAnnotationToolChange?: (tool: Annotation['type'] | null) => void
+    annotationColor?: string
+    onAnnotationColorChange?: (color: string) => void
+    annotationStrokeWidth?: number
+    onAnnotationStrokeWidthChange?: (width: number) => void
+    annotationFontSize?: number
+    onAnnotationFontSizeChange?: (size: number) => void
 }
 
 export default function RightSidebar({
@@ -119,7 +149,19 @@ export default function RightSidebar({
     webcamOverlaySize,
     setWebcamOverlaySize,
     webcamSettings,
-    onWebcamSettingsChange
+    onWebcamSettingsChange,
+    annotations = [],
+    onAddAnnotation = () => { },
+    onUpdateAnnotation = () => { },
+    onRemoveAnnotation = () => { },
+    selectedAnnotationTool = null,
+    onAnnotationToolChange = () => { },
+    annotationColor = '#ff0000',
+    onAnnotationColorChange = () => { },
+    annotationStrokeWidth = 3,
+    onAnnotationStrokeWidthChange = () => { },
+    annotationFontSize = 24,
+    onAnnotationFontSizeChange = () => { }
 }: RightSidebarProps) {
     const [activeTab, setActiveTab] = useState('background')
     const [showAddOverlay, setShowAddOverlay] = useState(false)
@@ -137,6 +179,8 @@ export default function RightSidebar({
         startTime: 0,
         endTime: 5
     })
+
+
 
     // Fetch Pexels photos when wallpaper tab is selected
     useEffect(() => {
@@ -414,7 +458,7 @@ export default function RightSidebar({
                     </div>
 
                     {/* Color Presets Grid */}
-                    <div className="grid grid-cols-6 gap-1 mb-3">
+                    <div className="grid grid-cols-7 gap-[0.5] mb-3">
                         {[
                             { name: 'Black', color: '#000000' },
                             { name: 'White', color: '#ffffff' },
@@ -454,8 +498,8 @@ export default function RightSidebar({
                                     type: 'color',
                                     backgroundColor: preset.color
                                 })}
-                                className={`aspect-square rounded cursor-pointer border-2 transition-all duration-200 group ${backgroundSettings.type === 'color' && backgroundSettings.backgroundColor === preset.color
-                                    ? 'border-purple-500 scale-110 shadow-lg ring-2 ring-purple-500'
+                                className={`aspect-square rounded cursor-pointer border-[2px] transition-all duration-200 group ${backgroundSettings.type === 'color' && backgroundSettings.backgroundColor === preset.color
+                                    ? 'border-purple-500 scale-110 shadow-lg ring-[1px] ring-purple-500'
                                     : 'border-gray-600 hover:border-purple-300 hover:scale-110 hover:shadow-md'
                                     }`}
                                 style={{ backgroundColor: preset.color }}
@@ -1000,6 +1044,210 @@ export default function RightSidebar({
         )
     }
 
+    const renderDrawTab = () => {
+        const annotationTypes = [
+            { id: 'text', icon: Type, label: 'Text', description: 'Add text labels' },
+            { id: 'arrow', icon: MousePointer, label: 'Arrow', description: 'Point to elements' },
+            { id: 'rectangle', icon: Square, label: 'Rectangle', description: 'Highlight areas' },
+            { id: 'circle', icon: Square, label: 'Circle', description: 'Circle highlights' },
+            { id: 'line', icon: Square, label: 'Line', description: 'Draw lines' },
+            { id: 'highlight', icon: Square, label: 'Highlight', description: 'Highlight regions' }
+        ]
+
+        const colorPresets = [
+            { name: 'Red', color: '#ff0000' },
+            { name: 'Orange', color: '#ff8800' },
+            { name: 'Yellow', color: '#ffff00' },
+            { name: 'Green', color: '#00ff00' },
+            { name: 'Blue', color: '#0088ff' },
+            { name: 'Purple', color: '#8800ff' },
+            { name: 'Pink', color: '#ff00ff' },
+            { name: 'White', color: '#ffffff' },
+            { name: 'Black', color: '#000000' }
+        ]
+
+        return (
+            <div className="space-y-4">
+                {/* Annotation Type Selection */}
+                <div>
+                    <div className="flex items-center gap-2 mb-2">
+                        <Type className="h-4 w-4" />
+                        <h3 className="font-medium text-sm">Annotation Type</h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        {annotationTypes.map((type) => {
+                            const Icon = type.icon
+                            return (
+                                <button
+                                    key={type.id}
+                                    onClick={() => onAnnotationToolChange(type.id as any)}
+                                    className={`flex items-center gap-2 p-2 rounded-lg transition-all duration-200 ${selectedAnnotationTool === type.id
+                                        ? 'bg-purple-600 text-white scale-105 shadow-lg'
+                                        : 'bg-gray-700 text-gray-400 hover:text-white hover:bg-gray-600 hover:scale-105'
+                                        }`}
+                                    title={type.description}
+                                >
+                                    <Icon className="h-4 w-4" />
+                                    <span className="text-xs font-medium">{type.label}</span>
+                                </button>
+                            )
+                        })}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-2">
+                        {selectedAnnotationTool ? `Click on the video to draw ${selectedAnnotationTool}` : 'Select a tool to start annotating'}
+                    </p>
+                </div>
+
+                {/* Color Selection */}
+                <div>
+                    <div className="flex items-center gap-2 mb-2">
+                        <Palette className="h-4 w-4" />
+                        <h3 className="font-medium text-sm">Color</h3>
+                    </div>
+                    <div className="grid grid-cols-9 gap-1 mb-2">
+                        {colorPresets.map((preset) => (
+                            <button
+                                key={preset.color}
+                                onClick={() => onAnnotationColorChange(preset.color)}
+                                className={`aspect-square rounded-md border-2 transition-all duration-200 hover:scale-110 ${annotationColor === preset.color
+                                    ? 'border-purple-500 scale-110 shadow-lg ring-2 ring-purple-500'
+                                    : 'border-gray-600 hover:border-purple-300'
+                                    }`}
+                                style={{ backgroundColor: preset.color }}
+                                title={preset.name}
+                            />
+                        ))}
+                    </div>
+                    <div className="flex gap-2">
+                        <input
+                            type="color"
+                            value={annotationColor}
+                            onChange={(e) => onAnnotationColorChange(e.target.value)}
+                            className="w-10 h-10 rounded border border-gray-600 cursor-pointer"
+                        />
+                        <Input
+                            type="text"
+                            value={annotationColor}
+                            onChange={(e) => onAnnotationColorChange(e.target.value)}
+                            className="flex-1 bg-gray-700 border-gray-600 text-xs"
+                            placeholder="#ff0000"
+                        />
+                    </div>
+                </div>
+
+                {/* Stroke Width (for shapes) */}
+                {selectedAnnotationTool !== 'text' && selectedAnnotationTool && (
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <Square className="h-4 w-4" />
+                            <h3 className="font-medium text-sm">Stroke Width</h3>
+                        </div>
+                        <div className="space-y-1">
+                            <Slider
+                                value={[annotationStrokeWidth]}
+                                onValueChange={(value) => onAnnotationStrokeWidthChange(value[0])}
+                                min={1}
+                                max={20}
+                                step={1}
+                                className="w-full"
+                            />
+                            <div className="text-xs text-gray-400 text-center">
+                                {annotationStrokeWidth}px
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Font Size (for text) */}
+                {selectedAnnotationTool === 'text' && (
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <Type className="h-4 w-4" />
+                            <h3 className="font-medium text-sm">Font Size</h3>
+                        </div>
+                        <div className="space-y-1">
+                            <Slider
+                                value={[annotationFontSize]}
+                                onValueChange={(value) => onAnnotationFontSizeChange(value[0])}
+                                min={12}
+                                max={72}
+                                step={2}
+                                className="w-full"
+                            />
+                            <div className="text-xs text-gray-400 text-center">
+                                {annotationFontSize}px
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+
+
+                {/* Annotations List */}
+                {annotations.length > 0 && (
+                    <div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <Type className="h-4 w-4" />
+                            <h3 className="font-medium text-sm">Active Annotations ({annotations.length})</h3>
+                        </div>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {annotations.map((annotation) => (
+                                <div
+                                    key={annotation.id}
+                                    className="bg-gray-700 rounded-lg p-2 space-y-2"
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <div
+                                                className="w-4 h-4 rounded border border-gray-600"
+                                                style={{ backgroundColor: annotation.color }}
+                                            />
+                                            <span className="text-xs font-medium capitalize">
+                                                {annotation.type}
+                                            </span>
+                                        </div>
+                                        <Button
+                                            onClick={() => onRemoveAnnotation(annotation.id)}
+                                            size="sm"
+                                            variant="destructive"
+                                            className="h-6 w-6 p-0 text-xs"
+                                        >
+                                            ×
+                                        </Button>
+                                    </div>
+                                    {annotation.content && (
+                                        <div className="text-xs text-gray-400 truncate">
+                                            "{annotation.content}"
+                                        </div>
+                                    )}
+                                    <div className="text-xs text-gray-500">
+                                        {formatTime(annotation.startTime)} - {formatTime(annotation.endTime)}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Info Box */}
+                <div className="bg-gray-700/50 rounded-lg p-3">
+                    <div className="flex items-start gap-2">
+                        <Type className="h-4 w-4 text-purple-400 mt-0.5 flex-shrink-0" />
+                        <div className="text-xs text-gray-300">
+                            <p className="font-medium mb-1">Drawing Tips</p>
+                            <ul className="text-gray-400 space-y-1">
+                                <li>• Use arrows to point to specific elements</li>
+                                <li>• Rectangles are great for highlighting areas</li>
+                                <li>• Text annotations can explain features</li>
+                                <li>• Adjust timing to show annotations when needed</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     const renderLayoutTab = () => {
         const layouts = [
             {
@@ -1283,7 +1531,7 @@ export default function RightSidebar({
             case 'magic':
                 return <div className="text-sm text-gray-400">Magic settings coming soon...</div>
             case 'draw':
-                return <div className="text-sm text-gray-400">Draw settings coming soon...</div>
+                return renderDrawTab()
             default:
                 return renderBackgroundTab()
         }

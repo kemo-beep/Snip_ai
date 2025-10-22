@@ -380,9 +380,29 @@ function drawBackground(
     height: number,
     settings: any
 ) {
-    const { type, backgroundColor, gradientColors } = settings
+    const { type, backgroundColor, gradientColors, wallpaperIndex, wallpaperUrl } = settings
 
     switch (type) {
+        case 'wallpaper':
+            if (wallpaperUrl) {
+                // For wallpaper with URL, we'd need to load the image first
+                // For now, fall back to gradient
+                const gradient = ctx.createLinearGradient(0, 0, width, height)
+                gradient.addColorStop(0, `hsl(${wallpaperIndex * 24}, 70%, 60%)`)
+                gradient.addColorStop(0.5, `hsl(${wallpaperIndex * 24 + 120}, 70%, 60%)`)
+                gradient.addColorStop(1, `hsl(${wallpaperIndex * 24 + 240}, 70%, 60%)`)
+                ctx.fillStyle = gradient
+                ctx.fillRect(0, 0, width, height)
+            } else {
+                // Generate gradient based on wallpaper index
+                const gradient = ctx.createLinearGradient(0, 0, width, height)
+                gradient.addColorStop(0, `hsl(${wallpaperIndex * 24}, 70%, 60%)`)
+                gradient.addColorStop(0.5, `hsl(${wallpaperIndex * 24 + 120}, 70%, 60%)`)
+                gradient.addColorStop(1, `hsl(${wallpaperIndex * 24 + 240}, 70%, 60%)`)
+                ctx.fillStyle = gradient
+                ctx.fillRect(0, 0, width, height)
+            }
+            break
         case 'color':
             ctx.fillStyle = backgroundColor || '#000000'
             ctx.fillRect(0, 0, width, height)
@@ -392,6 +412,14 @@ function drawBackground(
             gradient.addColorStop(0, gradientColors?.[0] || '#ff6b6b')
             gradient.addColorStop(1, gradientColors?.[1] || '#4ecdc4')
             ctx.fillStyle = gradient
+            ctx.fillRect(0, 0, width, height)
+            break
+        case 'image':
+            // For custom images, fall back to gradient
+            const imgGradient = ctx.createLinearGradient(0, 0, width, height)
+            imgGradient.addColorStop(0, '#667eea')
+            imgGradient.addColorStop(1, '#764ba2')
+            ctx.fillStyle = imgGradient
             ctx.fillRect(0, 0, width, height)
             break
         default:
