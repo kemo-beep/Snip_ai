@@ -250,7 +250,7 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                     setTrimRange({ start: 0, end: video.duration })
                     setIsVideoReady(true)
                     addRecordedVideoClip(video.duration)
-                    
+
                     // Add webcam clip if available
                     if (webcamUrl) {
                         addWebcamClip(video.duration)
@@ -617,12 +617,12 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
     const getShadowStyle = () => {
         const { shadowIntensity } = backgroundSettings
         if (shadowIntensity === 0) return {}
-        
+
         // Calculate shadow based on intensity (0-100)
         const blur = Math.round(shadowIntensity * 0.8) // 0-80px
         const spread = Math.round(shadowIntensity * 0.2) // 0-20px
         const opacity = Math.min(shadowIntensity / 100 * 0.5, 0.5) // 0-0.5
-        
+
         return {
             boxShadow: `0 ${Math.round(shadowIntensity * 0.3)}px ${blur}px ${spread}px rgba(0, 0, 0, ${opacity})`
         }
@@ -746,9 +746,18 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
             {/* Main Content Area */}
             <div className="flex-1 flex min-h-0">
                 {/* Video Preview - Left Side */}
-                <div className="flex-1 bg-gray-900 flex items-center justify-center min-h-0 p-4">
+                <div className="flex-1 bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 flex items-center justify-center min-h-0 p-6 relative overflow-hidden">
+                    {/* Ambient Background Effect */}
+                    <div className="absolute inset-0 opacity-30">
+                        <div className="absolute top-0 left-0 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
+                        <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+                    </div>
+
+                    {/* Video Container with Enhanced Styling */}
                     <div
-                        className={`relative overflow-hidden border border-gray-700 transition-all duration-300 ${isDragging ? 'scale-105' : ''
+                        className={`relative overflow-hidden border-2 transition-all duration-500 ease-out z-10 ${isDragging
+                                ? 'scale-[1.02] border-purple-500/50 shadow-2xl shadow-purple-500/20'
+                                : 'border-gray-700/50 shadow-xl hover:border-gray-600/50'
                             }`}
                         style={{
                             aspectRatio: aspectRatio === '16:9' ? '16/9' :
@@ -756,25 +765,25 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                                     aspectRatio === '1:1' ? '1/1' :
                                         aspectRatio === '21:9' ? '21/9' :
                                             aspectRatio === '9:16' ? '9/16' : '16/9',
-                            maxWidth: '100%',
-                            maxHeight: '100%',
+                            maxWidth: '95%',
+                            maxHeight: '95%',
                             width: 'fit-content',
                             height: 'fit-content',
-                            minWidth: '300px',
-                            minHeight: '200px',
+                            minWidth: '400px',
+                            minHeight: '250px',
                             borderRadius: `${backgroundSettings.borderRadius}px`,
                             ...getShadowStyle()
                         }}
                     >
                         {/* Background Layer with Blur */}
                         <div
-                            className="absolute inset-0"
+                            className="absolute inset-0 transition-all duration-300"
                             style={{
                                 ...getBackgroundStyle(),
                                 borderRadius: `${backgroundSettings.borderRadius}px`
                             }}
                         />
-                        
+
                         {/* Content Layer (Video) */}
                         <div
                             className="w-full h-full relative"
@@ -785,7 +794,7 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                             <video
                                 ref={videoRef}
                                 src={videoUrl}
-                                className="w-full h-full object-cover transition-all duration-200 hover:brightness-110"
+                                className="w-full h-full object-cover transition-all duration-300 hover:brightness-105"
                                 style={{
                                     aspectRatio: aspectRatio === '16:9' ? '16/9' :
                                         aspectRatio === '4:3' ? '4/3' :
@@ -811,56 +820,94 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                                 }}
                                 onError={(e) => {
                                     console.error('Video error:', e)
-                                    // Force ready even on error
                                     setForceReady(true)
                                     setIsVideoReady(true)
                                 }}
                             />
+
+                            {/* Video Info Overlay - Top Left */}
+                            <div className="absolute top-3 left-3 flex gap-2 z-20">
+                                <div className="bg-black/60 backdrop-blur-md text-white text-xs px-2.5 py-1.5 rounded-lg border border-white/10 shadow-lg">
+                                    <Clock className="h-3 w-3 inline mr-1.5" />
+                                    {formatTime(currentTime)} / {formatTime(duration)}
+                                </div>
+                                <div className="bg-black/60 backdrop-blur-md text-white text-xs px-2.5 py-1.5 rounded-lg border border-white/10 shadow-lg">
+                                    {aspectRatio}
+                                </div>
+                            </div>
+
+                            {/* Playback Controls Overlay - Center (appears on hover) */}
+                            <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300 z-20 pointer-events-none">
+                                <div className="bg-black/70 backdrop-blur-xl rounded-full p-4 shadow-2xl border border-white/20 pointer-events-auto">
+                                    <Button
+                                        variant="ghost"
+                                        size="lg"
+                                        onClick={togglePlayPause}
+                                        className="text-white hover:text-purple-400 hover:bg-white/10 rounded-full h-16 w-16 p-0 transition-all duration-200"
+                                    >
+                                        {isPlaying ? (
+                                            <Pause className="h-8 w-8" />
+                                        ) : (
+                                            <Play className="h-8 w-8 ml-1" />
+                                        )}
+                                    </Button>
+                                </div>
+                            </div>
                         </div>
+
+                        {/* Loading State with Enhanced Animation */}
                         {!isVideoReady && !forceReady && (
                             <div
-                                className="absolute inset-0 bg-gray-900 bg-opacity-80 backdrop-blur-sm flex items-center justify-center"
+                                className="absolute inset-0 bg-gradient-to-br from-gray-900/95 via-gray-800/95 to-gray-900/95 backdrop-blur-xl flex items-center justify-center z-30"
                                 style={{ borderRadius: `${backgroundSettings.borderRadius}px` }}
                             >
                                 <div className="text-white text-center">
-                                    <div className="relative">
-                                        <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-purple-400" />
-                                        <div className="absolute inset-0 h-8 w-8 border-2 border-purple-400 border-t-transparent rounded-full animate-spin"></div>
+                                    <div className="relative mb-6">
+                                        <div className="h-20 w-20 mx-auto">
+                                            <Loader2 className="h-20 w-20 animate-spin text-purple-400" />
+                                            <div className="absolute inset-0 h-20 w-20 border-4 border-purple-400/30 border-t-purple-400 rounded-full animate-spin"></div>
+                                        </div>
+                                        <div className="absolute inset-0 h-20 w-20 mx-auto border-4 border-blue-400/20 border-t-blue-400 rounded-full animate-spin" style={{ animationDuration: '1.5s', animationDirection: 'reverse' }}></div>
                                     </div>
-                                    <p className="text-sm font-medium">Loading video...</p>
-                                    <p className="text-xs text-gray-400 mt-1">Preparing your content</p>
-                                    <Button
-                                        onClick={() => {
-                                            console.log('Force ready clicked')
-                                            setForceReady(true)
-                                            setIsVideoReady(true)
-                                            setDuration(60) // Default duration
-                                            setTrimRange({ start: 0, end: 60 })
-                                        }}
-                                        className="mt-4 bg-purple-600 hover:bg-purple-700 text-white"
-                                        size="sm"
-                                    >
-                                        Skip Loading
-                                    </Button>
+                                    <p className="text-lg font-semibold mb-2 bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
+                                        Loading video...
+                                    </p>
+                                    <p className="text-sm text-gray-400 mb-6">Preparing your content for editing</p>
+                                    <div className="flex gap-3 justify-center">
+                                        <Button
+                                            onClick={() => {
+                                                console.log('Force ready clicked')
+                                                setForceReady(true)
+                                                setIsVideoReady(true)
+                                                setDuration(60)
+                                                setTrimRange({ start: 0, end: 60 })
+                                            }}
+                                            className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg hover:shadow-purple-500/50 transition-all duration-200"
+                                            size="sm"
+                                        >
+                                            Skip Loading
+                                        </Button>
+                                    </div>
                                 </div>
                             </div>
                         )}
 
+                        {/* Enhanced Webcam Overlay */}
                         {webcamVideoUrl && webcamSettings.visible && (
                             <div
-                                className="absolute bg-black overflow-hidden transition-all duration-200"
+                                className="absolute bg-black overflow-hidden transition-all duration-300 hover:scale-105 group"
                                 style={{
                                     left: `${webcamOverlayPosition.x}%`,
                                     top: `${webcamOverlayPosition.y}%`,
                                     width: webcamSettings.shape === 'square' ? `${Math.min(webcamOverlaySize.width, webcamOverlaySize.height)}px` : `${webcamOverlaySize.width}px`,
                                     height: webcamSettings.shape === 'square' ? `${Math.min(webcamOverlaySize.width, webcamOverlaySize.height)}px` : `${webcamOverlaySize.height}px`,
                                     cursor: 'move',
-                                    zIndex: 10,
-                                    borderRadius: webcamSettings.shape === 'circle' ? '50%' : '8px',
+                                    zIndex: 15,
+                                    borderRadius: webcamSettings.shape === 'circle' ? '50%' : '12px',
                                     border: `${webcamSettings.borderWidth}px solid ${webcamSettings.borderColor}`,
-                                    boxShadow: webcamSettings.shadowIntensity > 0 
+                                    boxShadow: webcamSettings.shadowIntensity > 0
                                         ? `0 ${Math.round(webcamSettings.shadowIntensity * 0.3)}px ${Math.round(webcamSettings.shadowIntensity * 0.8)}px ${Math.round(webcamSettings.shadowIntensity * 0.2)}px rgba(0, 0, 0, ${Math.min(webcamSettings.shadowIntensity / 100 * 0.5, 0.5)})`
-                                        : 'none'
+                                        : '0 4px 12px rgba(0, 0, 0, 0.3)'
                                 }}
                                 onMouseDown={handleMouseDown}
                             >
@@ -870,7 +917,6 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                                     className="w-full h-full object-cover"
                                     muted
                                     onTimeUpdate={() => {
-                                        // Sync webcam video with main video
                                         if (videoRef.current && webcamVideoRef.current) {
                                             const timeDiff = Math.abs(videoRef.current.currentTime - webcamVideoRef.current.currentTime)
                                             if (timeDiff > 0.1) {
@@ -879,45 +925,70 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                                         }
                                     }}
                                 />
-                                <div 
-                                    className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize hover:bg-blue-500 transition-colors" 
-                                    style={{ backgroundColor: webcamSettings.borderColor }}
+                                {/* Resize Handle */}
+                                <div
+                                    className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize hover:scale-110 transition-all duration-200 opacity-0 group-hover:opacity-100"
+                                    style={{
+                                        backgroundColor: webcamSettings.borderColor,
+                                        borderRadius: webcamSettings.shape === 'circle' ? '50%' : '0 0 12px 0'
+                                    }}
                                     onMouseDown={handleResizeMouseDown}
-                                ></div>
-                                <div className="absolute top-1 left-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded backdrop-blur-sm">
-                                    Webcam
+                                >
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                        <div className="w-2 h-2 border-r-2 border-b-2 border-white/80"></div>
+                                    </div>
                                 </div>
+                                {/* Label */}
+                                <div className="absolute top-2 left-2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                    <span className="font-medium">Webcam</span>
+                                </div>
+                                {/* Corner Indicators */}
+                                <div className="absolute top-1 left-1 w-3 h-3 border-t-2 border-l-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
+                                <div className="absolute top-1 right-1 w-3 h-3 border-t-2 border-r-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
+                                <div className="absolute bottom-1 left-1 w-3 h-3 border-b-2 border-l-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
                             </div>
                         )}
 
-                        {/* Overlays */}
+                        {/* Enhanced Overlays */}
                         {overlays.map(overlay => (
                             <div
                                 key={overlay.id}
-                                className={`absolute border-2 border-blue-400 bg-blue-400/20 rounded-lg p-2 transition-all duration-200 group cursor-move ${currentTime >= overlay.startTime && currentTime <= overlay.endTime ? 'opacity-100' : 'opacity-50'
-                                    } ${hoveredOverlay === overlay.id ? 'scale-105 shadow-lg border-blue-300' : 'hover:scale-102'}`}
+                                className={`absolute border-2 rounded-xl p-3 transition-all duration-300 group cursor-move backdrop-blur-sm ${currentTime >= overlay.startTime && currentTime <= overlay.endTime
+                                        ? 'opacity-100 border-blue-400 bg-blue-400/20 shadow-lg shadow-blue-500/30'
+                                        : 'opacity-40 border-gray-500 bg-gray-500/10'
+                                    } ${hoveredOverlay === overlay.id
+                                        ? 'scale-110 shadow-2xl border-blue-300 ring-2 ring-blue-400/50 z-20'
+                                        : 'hover:scale-105 hover:shadow-xl'
+                                    }`}
                                 style={{
                                     left: `${overlay.x}px`,
                                     top: `${overlay.y}px`,
                                     width: `${overlay.width}px`,
-                                    height: `${overlay.height}px`
+                                    height: `${overlay.height}px`,
+                                    zIndex: hoveredOverlay === overlay.id ? 20 : 15
                                 }}
                                 onMouseEnter={() => setHoveredOverlay(overlay.id)}
                                 onMouseLeave={() => setHoveredOverlay(null)}
                             >
                                 {overlay.type === 'text' ? (
-                                    <span className="text-white font-medium text-sm">{overlay.content}</span>
+                                    <span className="text-white font-semibold text-sm drop-shadow-lg">{overlay.content}</span>
                                 ) : (
-                                    <img src={overlay.content} alt="Overlay" className="w-full h-full object-cover rounded" />
+                                    <img src={overlay.content} alt="Overlay" className="w-full h-full object-cover rounded-lg" />
                                 )}
+                                {/* Delete Button */}
                                 <Button
                                     size="sm"
                                     variant="destructive"
-                                    className="absolute -top-2 -right-2 h-5 w-5 p-0 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 hover:scale-110"
+                                    className="absolute -top-3 -right-3 h-6 w-6 p-0 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 hover:scale-125 shadow-lg"
                                     onClick={() => removeOverlay(overlay.id)}
                                 >
                                     ×
                                 </Button>
+                                {/* Corner Handles */}
+                                <div className="absolute top-0 left-0 w-2 h-2 bg-blue-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 -translate-x-1/2 -translate-y-1/2"></div>
+                                <div className="absolute top-0 right-0 w-2 h-2 bg-blue-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 translate-x-1/2 -translate-y-1/2"></div>
+                                <div className="absolute bottom-0 left-0 w-2 h-2 bg-blue-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 -translate-x-1/2 translate-y-1/2"></div>
+                                <div className="absolute bottom-0 right-0 w-2 h-2 bg-blue-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 translate-x-1/2 translate-y-1/2"></div>
                             </div>
                         ))}
                     </div>
