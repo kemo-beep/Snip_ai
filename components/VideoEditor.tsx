@@ -22,7 +22,8 @@ import {
 } from 'lucide-react'
 import MultiTrackTimeline from './MultiTrackTimeline'
 import RightSidebar from './RightSidebar'
-// import { trimVideo, addTextOverlay, convertToMP4, separateVideoStreams, overlayVideo } from '@/lib/videoProcessor'
+import ExportDialog, { ExportOptions } from './ExportDialog'
+import { exportVideo as processVideoExport, downloadBlob } from '@/lib/videoExporter'
 
 interface VideoEditorProps {
     videoUrl: string
@@ -89,6 +90,7 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
         backgroundColor: '#000000',
         gradientColors: ['#ff6b6b', '#4ecdc4']
     })
+    const [showExportDialog, setShowExportDialog] = useState(false)
 
     const handleAddClip = (clip: any) => {
         setClips(prev => [...prev, clip])
@@ -122,7 +124,7 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
     // Simple approach: Force video ready after a very short delay
     const [webcamVideoUrl, setWebcamVideoUrl] = useState<string | null>(webcamUrl || null)
     const [webcamOverlayPosition, setWebcamOverlayPosition] = useState({ x: 2, y: 2 })
-    const [webcamOverlaySize, setWebcamOverlaySize] = useState({ width: 200, height: 150 })
+    const [webcamOverlaySize, setWebcamOverlaySize] = useState({ width: 100, height: 100 })
     const [webcamSettings, setWebcamSettings] = useState({
         visible: true,
         shape: 'rectangle' as 'rectangle' | 'square' | 'circle',
@@ -465,36 +467,67 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
         setOverlays(prev => prev.filter(overlay => overlay.id !== id))
     }
 
-    const exportVideo = async () => {
+    const handleExportClick = () => {
+        setShowExportDialog(true)
+    }
+
+    const handleExport = async (options: ExportOptions, onProgressUpdate: (progress: number) => void) => {
         setIsProcessing(true)
         try {
-            // First, get the original video blobs
-            const screenResponse = await fetch(videoUrl)
-            const screenBlob = await screenResponse.blob()
+            console.log('Starting export with options:', options)
 
-            const webcamResponse = await fetch(webcamVideoUrl!)
-            const webcamBlob = await webcamResponse.blob()
-
-            // FFmpeg processing disabled for now
-            console.log('Video processing disabled - using original video')
-            let processedBlob = screenBlob
-
-            // Apply trimming if needed (simplified)
-            if (trimRange.start > 0 || trimRange.end < duration) {
-                console.log('Trim processing disabled - using original video')
-            }
-
-            // Apply text overlays (simplified)
-            for (const overlay of overlays) {
-                if (overlay.type === 'text' && overlay.content) {
-                    console.log('Text overlay processing disabled - using original video')
+            const exportedBlob = await processVideoExport({
+                videoUrl,
+                webcamUrl: webcamVideoUrl || undefined,
+                options,
+                videoDuration: duration, // Pass the actual video duration
+                webcamSettings: {
+                    visible: webcamSettings.visible && options.includeWebcam,
+                    position: webcamOverlayPosition,
+                    size: webcamOverlaySize,
+                    shape: webcamSettings.shape,
+                    borderWidth: webcamSettings.borderWidth,
+                    borderColor: webcamSettings.borderColor
+                },
+                backgroundSettings: {
+                    type: backgroundSettings.type,
+                    padding: backgroundSettings.padding,
+                    borderRadius: backgroundSettings.borderRadius
+                },
+                onProgress: (progress) => {
+                    console.log('Export progress:', Math.round(progress * 100) + '%')
+                    onProgressUpdate(progress)
                 }
+            })
+
+            console.log('Export complete, blob size:', exportedBlob.size)
+            console.log('Export blob type:', exportedBlob.type)
+
+            // Generate filename with timestamp and resolution
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)
+
+            // Determine actual format from blob type
+            let fileExtension = 'webm'
+            if (exportedBlob.type.includes('mp4')) {
+                fileExtension = 'mp4'
+            } else if (options.format === 'mp4') {
+                console.warn('⚠️ MP4 was requested but got WebM - conversion may have failed')
             }
 
-            onSave(processedBlob)
+            const filename = `video-${options.resolution}-${timestamp}.${fileExtension}`
+            console.log('Downloading as:', filename)
+
+            // Download the file
+            downloadBlob(exportedBlob, filename)
+
+            // Also call onSave for backward compatibility
+            onSave(exportedBlob)
+
+            setShowExportDialog(false)
         } catch (error) {
-            console.error('Video processing error:', error)
-            alert('Failed to process video. Please try again.')
+            console.error('Video export error:', error)
+            alert('Failed to export video. Please try again.')
+            throw error
         } finally {
             setIsProcessing(false)
         }
@@ -652,7 +685,7 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                 case 'e':
                     if (e.ctrlKey || e.metaKey) {
                         e.preventDefault()
-                        exportVideo()
+                        handleExportClick()
                     }
                     break
             }
@@ -660,10 +693,17 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
 
         document.addEventListener('keydown', handleKeyDown)
         return () => document.removeEventListener('keydown', handleKeyDown)
-    }, [togglePlayPause, handleRewind, handleFastForward, onCancel, exportVideo])
+    }, [togglePlayPause, handleRewind, handleFastForward, onCancel, handleExportClick])
 
     return (
         <div className="fixed inset-0 bg-gray-900 flex flex-col z-50 overflow-hidden">
+            {/* Export Dialog */}
+            <ExportDialog
+                isOpen={showExportDialog}
+                onClose={() => setShowExportDialog(false)}
+                onExport={handleExport}
+                duration={duration}
+            />
             {/* Top Toolbar - Compact Screen Studio Style */}
             <div className="bg-gray-800/95 backdrop-blur-sm border-b border-gray-700 px-3 py-2 shadow-lg">
                 <div className="flex items-center justify-between">
@@ -727,7 +767,7 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                         </Button>
                         <div className="h-4 w-px bg-gray-600" />
                         <Button
-                            onClick={exportVideo}
+                            onClick={handleExportClick}
                             disabled={isProcessing}
                             className="bg-purple-600 hover:bg-purple-700 text-white h-7 px-3 transition-all duration-200 hover:scale-105 hover:shadow-lg disabled:opacity-50"
                             title="Export video (Ctrl+E)"
@@ -756,8 +796,8 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                     {/* Video Container with Enhanced Styling */}
                     <div
                         className={`relative overflow-hidden border-2 transition-all duration-500 ease-out z-10 ${isDragging
-                                ? 'scale-[1.02] border-purple-500/50 shadow-2xl shadow-purple-500/20'
-                                : 'border-gray-700/50 shadow-xl hover:border-gray-600/50'
+                            ? 'scale-[1.02] border-purple-500/50 shadow-2xl shadow-purple-500/20'
+                            : 'border-gray-700/50 shadow-xl hover:border-gray-600/50'
                             }`}
                         style={{
                             aspectRatio: aspectRatio === '16:9' ? '16/9' :
@@ -954,8 +994,8 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                             <div
                                 key={overlay.id}
                                 className={`absolute border-2 rounded-xl p-3 transition-all duration-300 group cursor-move backdrop-blur-sm ${currentTime >= overlay.startTime && currentTime <= overlay.endTime
-                                        ? 'opacity-100 border-blue-400 bg-blue-400/20 shadow-lg shadow-blue-500/30'
-                                        : 'opacity-40 border-gray-500 bg-gray-500/10'
+                                    ? 'opacity-100 border-blue-400 bg-blue-400/20 shadow-lg shadow-blue-500/30'
+                                    : 'opacity-40 border-gray-500 bg-gray-500/10'
                                     } ${hoveredOverlay === overlay.id
                                         ? 'scale-110 shadow-2xl border-blue-300 ring-2 ring-blue-400/50 z-20'
                                         : 'hover:scale-105 hover:shadow-xl'
