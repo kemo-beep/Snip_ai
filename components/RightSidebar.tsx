@@ -20,7 +20,8 @@ import {
     Settings,
     FolderOpen,
     Loader2,
-    Webcam
+    Webcam,
+    Layout
 } from 'lucide-react'
 import ClipManager from './ClipManager'
 
@@ -86,12 +87,19 @@ interface RightSidebarProps {
     onBackgroundChange: (settings: any) => void
     clips: Clip[]
     onAddClip: (clip: Clip) => void
-    onRemoveClip: (clipId: string) => void
     onUpdateClip: (clipId: string, updates: Partial<Clip>) => void
     webcamOverlayPosition: { x: number, y: number }
     setWebcamOverlayPosition: (position: { x: number, y: number }) => void
     webcamOverlaySize: { width: number, height: number }
     setWebcamOverlaySize: (size: { width: number, height: number }) => void
+    webcamSettings: {
+        visible: boolean
+        shape: 'rectangle' | 'square' | 'circle'
+        shadowIntensity: number
+        borderWidth: number
+        borderColor: string
+    }
+    onWebcamSettingsChange: (settings: any) => void
 }
 
 export default function RightSidebar({
@@ -105,12 +113,13 @@ export default function RightSidebar({
     onBackgroundChange,
     clips,
     onAddClip,
-    onRemoveClip,
     onUpdateClip,
     webcamOverlayPosition,
     setWebcamOverlayPosition,
     webcamOverlaySize,
-    setWebcamOverlaySize
+    setWebcamOverlaySize,
+    webcamSettings,
+    onWebcamSettingsChange
 }: RightSidebarProps) {
     const [activeTab, setActiveTab] = useState('background')
     const [showAddOverlay, setShowAddOverlay] = useState(false)
@@ -188,6 +197,7 @@ export default function RightSidebar({
     const tabs = [
         { id: 'media', icon: FolderOpen, label: 'Media' },
         { id: 'background', icon: Square, label: 'Background' },
+        { id: 'layout', icon: Layout, label: 'Layout' },
         { id: 'cursor', icon: MousePointer, label: 'Cursor' },
         { id: 'video', icon: Video, label: 'Video' },
         { id: 'webcam', icon: Webcam, label: 'Webcam' },
@@ -690,99 +700,391 @@ export default function RightSidebar({
         </div>
     )
 
-    const renderWebcamTab = () => (
-        <div className="space-y-4">
-            <div>
-                <div className="flex items-center gap-2 mb-2">
-                    <Webcam className="h-4 w-4" />
-                    <h3 className="font-medium text-sm">Position</h3>
+    const renderWebcamTab = () => {
+        const positionPresets = [
+            { name: 'Top Left', x: 2, y: 2 },
+            { name: 'Top Right', x: 70, y: 2 },
+            { name: 'Bottom Left', x: 2, y: 70 },
+            { name: 'Bottom Right', x: 70, y: 70 }
+        ]
+
+        return (
+            <div className="space-y-4">
+                {/* Visibility Toggle */}
+                <div>
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <Webcam className="h-4 w-4" />
+                            <h3 className="font-medium text-sm">Visibility</h3>
+                        </div>
+                        <Button
+                            size="sm"
+                            variant={webcamSettings.visible ? 'default' : 'outline'}
+                            onClick={() => onWebcamSettingsChange({ ...webcamSettings, visible: !webcamSettings.visible })}
+                            className="text-xs h-7"
+                        >
+                            {webcamSettings.visible ? 'Visible' : 'Hidden'}
+                        </Button>
+                    </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                    <div>
-                        <Label className="text-xs text-gray-400">X Position</Label>
-                        <div className="space-y-1 mt-1">
-                            <Slider
-                                value={[webcamOverlayPosition.x]}
-                                onValueChange={(value) => setWebcamOverlayPosition({ ...webcamOverlayPosition, x: value[0] })}
-                                max={1920}
-                                step={1}
-                                className="w-full"
-                            />
-                            <div className="text-xs text-gray-400 text-center">
-                                {webcamOverlayPosition.x}px
+
+                {/* Shape Selection */}
+                <div>
+                    <div className="flex items-center gap-2 mb-2">
+                        <Square className="h-4 w-4" />
+                        <h3 className="font-medium text-sm">Shape</h3>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                        {['rectangle', 'square', 'circle'].map((shape) => (
+                            <button
+                                key={shape}
+                                onClick={() => onWebcamSettingsChange({ ...webcamSettings, shape: shape as any })}
+                                className={`px-2 py-2 text-xs rounded-md transition-all duration-200 ${
+                                    webcamSettings.shape === shape
+                                        ? 'bg-purple-600 text-white scale-105'
+                                        : 'bg-gray-700 text-gray-400 hover:text-white hover:bg-gray-600'
+                                }`}
+                            >
+                                {shape.charAt(0).toUpperCase() + shape.slice(1)}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Position Presets */}
+                <div>
+                    <div className="flex items-center gap-2 mb-2">
+                        <MousePointer className="h-4 w-4" />
+                        <h3 className="font-medium text-sm">Position Presets</h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1">
+                        {positionPresets.map((preset) => (
+                            <button
+                                key={preset.name}
+                                onClick={() => setWebcamOverlayPosition({ x: preset.x, y: preset.y })}
+                                className="px-2 py-2 text-xs rounded-md bg-gray-700 text-gray-400 hover:text-white hover:bg-gray-600 transition-all duration-200 hover:scale-105"
+                            >
+                                {preset.name}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Custom Position */}
+                <div>
+                    <div className="flex items-center gap-2 mb-2">
+                        <MousePointer className="h-4 w-4" />
+                        <h3 className="font-medium text-sm">Custom Position</h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <Label className="text-xs text-gray-400">X Position (%)</Label>
+                            <div className="space-y-1 mt-1">
+                                <Slider
+                                    value={[webcamOverlayPosition.x]}
+                                    onValueChange={(value) => setWebcamOverlayPosition({ ...webcamOverlayPosition, x: value[0] })}
+                                    max={100}
+                                    step={1}
+                                    className="w-full"
+                                />
+                                <div className="text-xs text-gray-400 text-center">
+                                    {webcamOverlayPosition.x}%
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <Label className="text-xs text-gray-400">Y Position (%)</Label>
+                            <div className="space-y-1 mt-1">
+                                <Slider
+                                    value={[webcamOverlayPosition.y]}
+                                    onValueChange={(value) => setWebcamOverlayPosition({ ...webcamOverlayPosition, y: value[0] })}
+                                    max={100}
+                                    step={1}
+                                    className="w-full"
+                                />
+                                <div className="text-xs text-gray-400 text-center">
+                                    {webcamOverlayPosition.y}%
+                                </div>
                             </div>
                         </div>
                     </div>
+                </div>
+
+                {/* Size */}
+                <div>
+                    <div className="flex items-center gap-2 mb-2">
+                        <Webcam className="h-4 w-4" />
+                        <h3 className="font-medium text-sm">Size</h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <Label className="text-xs text-gray-400">Width</Label>
+                            <div className="space-y-1 mt-1">
+                                <Slider
+                                    value={[webcamOverlaySize.width]}
+                                    onValueChange={(value) => setWebcamOverlaySize({ ...webcamOverlaySize, width: value[0] })}
+                                    max={1000}
+                                    step={1}
+                                    className="w-full"
+                                />
+                                <div className="text-xs text-gray-400 text-center">
+                                    {webcamOverlaySize.width}px
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <Label className="text-xs text-gray-400">Height</Label>
+                            <div className="space-y-1 mt-1">
+                                <Slider
+                                    value={[webcamOverlaySize.height]}
+                                    onValueChange={(value) => setWebcamOverlaySize({ ...webcamOverlaySize, height: value[0] })}
+                                    max={1000}
+                                    step={1}
+                                    className="w-full"
+                                />
+                                <div className="text-xs text-gray-400 text-center">
+                                    {webcamOverlaySize.height}px
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Border */}
+                <div>
+                    <div className="flex items-center gap-2 mb-2">
+                        <Square className="h-4 w-4" />
+                        <h3 className="font-medium text-sm">Border</h3>
+                    </div>
+                    <div className="space-y-2">
+                        <div>
+                            <Label className="text-xs text-gray-400">Border Width</Label>
+                            <div className="space-y-1 mt-1">
+                                <Slider
+                                    value={[webcamSettings.borderWidth]}
+                                    onValueChange={(value) => onWebcamSettingsChange({ ...webcamSettings, borderWidth: value[0] })}
+                                    max={20}
+                                    step={1}
+                                    className="w-full"
+                                />
+                                <div className="text-xs text-gray-400 text-center">
+                                    {webcamSettings.borderWidth}px
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <Label className="text-xs text-gray-400">Border Color</Label>
+                            <div className="flex gap-1 mt-1">
+                                <input
+                                    type="color"
+                                    value={webcamSettings.borderColor}
+                                    onChange={(e) => onWebcamSettingsChange({ ...webcamSettings, borderColor: e.target.value })}
+                                    className="w-6 h-6 rounded border border-gray-600 cursor-pointer transition-all duration-200 hover:scale-110 hover:shadow-md"
+                                />
+                                <input
+                                    type="text"
+                                    value={webcamSettings.borderColor}
+                                    onChange={(e) => onWebcamSettingsChange({ ...webcamSettings, borderColor: e.target.value })}
+                                    className="flex-1 bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs"
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Shadow */}
+                <div>
+                    <div className="flex items-center gap-2 mb-2">
+                        <Square className="h-4 w-4" />
+                        <h3 className="font-medium text-sm">Shadow</h3>
+                    </div>
                     <div>
-                        <Label className="text-xs text-gray-400">Y Position</Label>
+                        <Label className="text-xs text-gray-400">Shadow Intensity</Label>
                         <div className="space-y-1 mt-1">
                             <Slider
-                                value={[webcamOverlayPosition.y]}
-                                onValueChange={(value) => setWebcamOverlayPosition({ ...webcamOverlayPosition, y: value[0] })}
-                                max={1080}
+                                value={[webcamSettings.shadowIntensity]}
+                                onValueChange={(value) => onWebcamSettingsChange({ ...webcamSettings, shadowIntensity: value[0] })}
+                                max={100}
                                 step={1}
                                 className="w-full"
                             />
                             <div className="text-xs text-gray-400 text-center">
-                                {webcamOverlayPosition.y}px
+                                {webcamSettings.shadowIntensity}%
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full transition-all duration-200 hover:bg-gray-700 hover:scale-105 hover:shadow-md"
+                    onClick={() => {
+                        setWebcamOverlayPosition({ x: 2, y: 2 })
+                        setWebcamOverlaySize({ width: 200, height: 150 })
+                        onWebcamSettingsChange({
+                            visible: true,
+                            shape: 'rectangle',
+                            shadowIntensity: 0,
+                            borderWidth: 2,
+                            borderColor: '#3b82f6'
+                        })
+                    }}
+                >
+                    Reset Webcam Settings
+                </Button>
+            </div>
+        )
+    }
+
+    const renderLayoutTab = () => {
+        const layouts = [
+            {
+                name: 'Picture in Picture - Bottom Right',
+                description: 'Webcam in bottom right corner',
+                preview: 'PiP BR',
+                webcamPosition: { x: 68, y: 72 },
+                webcamSize: { width: 280, height: 210 },
+                webcamShape: 'rectangle' as const
+            },
+            {
+                name: 'Picture in Picture - Bottom Left',
+                description: 'Webcam in bottom left corner',
+                preview: 'PiP BL',
+                webcamPosition: { x: 2, y: 72 },
+                webcamSize: { width: 280, height: 210 },
+                webcamShape: 'rectangle' as const
+            },
+            {
+                name: 'Picture in Picture - Top Right',
+                description: 'Webcam in top right corner',
+                preview: 'PiP TR',
+                webcamPosition: { x: 68, y: 2 },
+                webcamSize: { width: 280, height: 210 },
+                webcamShape: 'rectangle' as const
+            },
+            {
+                name: 'Picture in Picture - Top Left',
+                description: 'Webcam in top left corner',
+                preview: 'PiP TL',
+                webcamPosition: { x: 2, y: 2 },
+                webcamSize: { width: 280, height: 210 },
+                webcamShape: 'rectangle' as const
+            },
+            {
+                name: 'Circle Bottom Right',
+                description: 'Circular webcam in bottom right',
+                preview: '⭕ BR',
+                webcamPosition: { x: 75, y: 75 },
+                webcamSize: { width: 200, height: 200 },
+                webcamShape: 'circle' as const
+            },
+            {
+                name: 'Circle Bottom Left',
+                description: 'Circular webcam in bottom left',
+                preview: '⭕ BL',
+                webcamPosition: { x: 2, y: 75 },
+                webcamSize: { width: 200, height: 200 },
+                webcamShape: 'circle' as const
+            },
+            {
+                name: 'Side by Side',
+                description: 'Screen and webcam side by side',
+                preview: '⬜⬜',
+                webcamPosition: { x: 55, y: 25 },
+                webcamSize: { width: 350, height: 350 },
+                webcamShape: 'square' as const
+            },
+            {
+                name: 'Large Webcam Center',
+                description: 'Large centered webcam overlay',
+                preview: '⬜',
+                webcamPosition: { x: 30, y: 20 },
+                webcamSize: { width: 400, height: 500 },
+                webcamShape: 'rectangle' as const
+            },
+            {
+                name: 'Small Circle Top Right',
+                description: 'Small circular webcam',
+                preview: '⚪ TR',
+                webcamPosition: { x: 82, y: 2 },
+                webcamSize: { width: 130, height: 130 },
+                webcamShape: 'circle' as const
+            },
+            {
+                name: 'Webcam Only',
+                description: 'Full screen webcam',
+                preview: '⬛',
+                webcamPosition: { x: 5, y: 5 },
+                webcamSize: { width: 800, height: 600 },
+                webcamShape: 'rectangle' as const
+            }
+        ]
+
+        const applyLayout = (layout: typeof layouts[0]) => {
+            setWebcamOverlayPosition(layout.webcamPosition)
+            setWebcamOverlaySize(layout.webcamSize)
+            onWebcamSettingsChange({
+                ...webcamSettings,
+                shape: layout.webcamShape,
+                visible: true
+            })
+        }
+
+        return (
+            <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-2">
+                    <Layout className="h-4 w-4" />
+                    <h3 className="font-medium text-sm">Layout Presets</h3>
+                </div>
+                <p className="text-xs text-gray-400">
+                    Choose a predefined layout for your webcam and screen recording
+                </p>
+
+                <div className="grid grid-cols-2 gap-2">
+                    {layouts.map((layout, index) => (
+                        <button
+                            key={index}
+                            onClick={() => applyLayout(layout)}
+                            className="group relative bg-gray-700 hover:bg-gray-600 rounded-lg p-3 transition-all duration-200 hover:scale-105 hover:shadow-lg text-left"
+                        >
+                            {/* Preview Box */}
+                            <div className="aspect-video bg-gray-800 rounded mb-2 flex items-center justify-center text-2xl font-mono text-gray-500 group-hover:text-purple-400 transition-colors">
+                                {layout.preview}
+                            </div>
+                            
+                            {/* Layout Name */}
+                            <div className="text-xs font-medium text-white mb-1">
+                                {layout.name}
+                            </div>
+                            
+                            {/* Description */}
+                            <div className="text-[10px] text-gray-400">
+                                {layout.description}
+                            </div>
+
+                            {/* Hover Indicator */}
+                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+
+                <div className="bg-gray-700/50 rounded-lg p-3 mt-4">
+                    <div className="flex items-start gap-2">
+                        <Layout className="h-4 w-4 text-purple-400 mt-0.5 flex-shrink-0" />
+                        <div className="text-xs text-gray-300">
+                            <p className="font-medium mb-1">Pro Tip</p>
+                            <p className="text-gray-400">
+                                After selecting a layout, you can fine-tune the position and size in the Webcam tab, or drag the webcam directly on the preview.
+                            </p>
                         </div>
                     </div>
                 </div>
             </div>
-
-            <div>
-                <div className="flex items-center gap-2 mb-2">
-                    <Webcam className="h-4 w-4" />
-                    <h3 className="font-medium text-sm">Size</h3>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                    <div>
-                        <Label className="text-xs text-gray-400">Width</Label>
-                        <div className="space-y-1 mt-1">
-                            <Slider
-                                value={[webcamOverlaySize.width]}
-                                onValueChange={(value) => setWebcamOverlaySize({ ...webcamOverlaySize, width: value[0] })}
-                                max={1000}
-                                step={1}
-                                className="w-full"
-                            />
-                            <div className="text-xs text-gray-400 text-center">
-                                {webcamOverlaySize.width}px
-                            </div>
-                        </div>
-                    </div>
-                    <div>
-                        <Label className="text-xs text-gray-400">Height</Label>
-                        <div className="space-y-1 mt-1">
-                            <Slider
-                                value={[webcamOverlaySize.height]}
-                                onValueChange={(value) => setWebcamOverlaySize({ ...webcamOverlaySize, height: value[0] })}
-                                max={1000}
-                                step={1}
-                                className="w-full"
-                            />
-                            <div className="text-xs text-gray-400 text-center">
-                                {webcamOverlaySize.height}px
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <Button
-                variant="outline"
-                size="sm"
-                className="w-full transition-all duration-200 hover:bg-gray-700 hover:scale-105 hover:shadow-md"
-                onClick={() => {
-                    setWebcamOverlayPosition({ x: 20, y: 20 })
-                    setWebcamOverlaySize({ width: 200, height: 150 })
-                }}
-            >
-                Reset Webcam Settings
-            </Button>
-        </div>
-    )
+        )
+    }
 
     const renderTabContent = () => {
         switch (activeTab) {
@@ -791,12 +1093,13 @@ export default function RightSidebar({
                     <ClipManager
                         clips={clips}
                         onAddClip={onAddClip}
-                        onRemoveClip={onRemoveClip}
                         onUpdateClip={onUpdateClip}
                     />
                 )
             case 'background':
                 return renderBackgroundTab()
+            case 'layout':
+                return renderLayoutTab()
             case 'cursor':
                 return <div className="text-sm text-gray-400">Cursor settings coming soon...</div>
             case 'video':

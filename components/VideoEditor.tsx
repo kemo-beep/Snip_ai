@@ -121,8 +121,15 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
 
     // Simple approach: Force video ready after a very short delay
     const [webcamVideoUrl, setWebcamVideoUrl] = useState<string | null>(webcamUrl || null)
-    const [webcamOverlayPosition, setWebcamOverlayPosition] = useState({ x: 20, y: 20 })
+    const [webcamOverlayPosition, setWebcamOverlayPosition] = useState({ x: 2, y: 2 })
     const [webcamOverlaySize, setWebcamOverlaySize] = useState({ width: 200, height: 150 })
+    const [webcamSettings, setWebcamSettings] = useState({
+        visible: true,
+        shape: 'rectangle' as 'rectangle' | 'square' | 'circle',
+        shadowIntensity: 0,
+        borderWidth: 2,
+        borderColor: '#3b82f6'
+    })
     const webcamVideoRef = useRef<HTMLVideoElement>(null)
 
     useEffect(() => {
@@ -839,16 +846,21 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                             </div>
                         )}
 
-                        {webcamVideoUrl && (
+                        {webcamVideoUrl && webcamSettings.visible && (
                             <div
-                                className="absolute border-2 border-blue-400 bg-black rounded-lg overflow-hidden shadow-2xl"
+                                className="absolute bg-black overflow-hidden transition-all duration-200"
                                 style={{
-                                    left: `${webcamOverlayPosition.x}px`,
-                                    top: `${webcamOverlayPosition.y}px`,
-                                    width: `${webcamOverlaySize.width}px`,
-                                    height: `${webcamOverlaySize.height}px`,
+                                    left: `${webcamOverlayPosition.x}%`,
+                                    top: `${webcamOverlayPosition.y}%`,
+                                    width: webcamSettings.shape === 'square' ? `${Math.min(webcamOverlaySize.width, webcamOverlaySize.height)}px` : `${webcamOverlaySize.width}px`,
+                                    height: webcamSettings.shape === 'square' ? `${Math.min(webcamOverlaySize.width, webcamOverlaySize.height)}px` : `${webcamOverlaySize.height}px`,
                                     cursor: 'move',
-                                    zIndex: 10
+                                    zIndex: 10,
+                                    borderRadius: webcamSettings.shape === 'circle' ? '50%' : '8px',
+                                    border: `${webcamSettings.borderWidth}px solid ${webcamSettings.borderColor}`,
+                                    boxShadow: webcamSettings.shadowIntensity > 0 
+                                        ? `0 ${Math.round(webcamSettings.shadowIntensity * 0.3)}px ${Math.round(webcamSettings.shadowIntensity * 0.8)}px ${Math.round(webcamSettings.shadowIntensity * 0.2)}px rgba(0, 0, 0, ${Math.min(webcamSettings.shadowIntensity / 100 * 0.5, 0.5)})`
+                                        : 'none'
                                 }}
                                 onMouseDown={handleMouseDown}
                             >
@@ -867,7 +879,11 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                                         }
                                     }}
                                 />
-                                <div className="absolute bottom-0 right-0 w-4 h-4 bg-blue-400 cursor-se-resize hover:bg-blue-500 transition-colors" onMouseDown={handleResizeMouseDown}></div>
+                                <div 
+                                    className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize hover:bg-blue-500 transition-colors" 
+                                    style={{ backgroundColor: webcamSettings.borderColor }}
+                                    onMouseDown={handleResizeMouseDown}
+                                ></div>
                                 <div className="absolute top-1 left-1 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded backdrop-blur-sm">
                                     Webcam
                                 </div>
@@ -925,6 +941,8 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                         setWebcamOverlayPosition={setWebcamOverlayPosition}
                         webcamOverlaySize={webcamOverlaySize}
                         setWebcamOverlaySize={setWebcamOverlaySize}
+                        webcamSettings={webcamSettings}
+                        onWebcamSettingsChange={setWebcamSettings}
                     />
                 </div>
             </div>
