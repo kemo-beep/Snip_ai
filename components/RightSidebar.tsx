@@ -1004,19 +1004,19 @@ export default function RightSidebar({
         const layouts = [
             {
                 name: 'Screen Left - Webcam Right',
-                description: 'Large screen on left, webcam on right',
+                description: 'Screen recording 75%, webcam 23% side by side',
                 preview: '⬜📹',
-                webcamPosition: { x: 65, y: 10 },
-                webcamSize: { width: 300, height: 450 },
+                webcamPosition: { x: 76, y: 5 },
+                webcamSize: { width: 230, height: 550 },
                 webcamShape: 'rectangle' as const,
                 screenPosition: 'left' as const
             },
             {
                 name: 'Screen Right - Webcam Left',
-                description: 'Large screen on right, webcam on left',
+                description: 'Webcam 23%, screen recording 75% side by side',
                 preview: '📹⬜',
-                webcamPosition: { x: 5, y: 10 },
-                webcamSize: { width: 300, height: 450 },
+                webcamPosition: { x: 1, y: 5 },
+                webcamSize: { width: 230, height: 550 },
                 webcamShape: 'rectangle' as const,
                 screenPosition: 'right' as const
             },
