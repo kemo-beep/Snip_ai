@@ -330,13 +330,12 @@ export default function RightSidebar({
                                     type: 'gradient',
                                     gradientColors: preset.colors
                                 })}
-                                className={`aspect-square rounded cursor-pointer border transition-all duration-200 group ${
-                                    backgroundSettings.type === 'gradient' && 
+                                className={`aspect-square rounded cursor-pointer border transition-all duration-200 group ${backgroundSettings.type === 'gradient' &&
                                     backgroundSettings.gradientColors[0] === preset.colors[0] &&
                                     backgroundSettings.gradientColors[1] === preset.colors[1]
-                                        ? 'border-purple-500 scale-105 shadow-lg ring-2 ring-purple-500'
-                                        : 'border-transparent hover:border-purple-300 hover:scale-105 hover:shadow-md'
-                                }`}
+                                    ? 'border-purple-500 scale-105 shadow-lg ring-2 ring-purple-500'
+                                    : 'border-transparent hover:border-purple-300 hover:scale-105 hover:shadow-md'
+                                    }`}
                                 style={{
                                     background: `linear-gradient(${preset.angle}deg, ${preset.colors[0]}, ${preset.colors[1]})`
                                 }}
@@ -411,7 +410,72 @@ export default function RightSidebar({
                 <div>
                     <div className="flex items-center gap-2 mb-2">
                         <Square className="h-4 w-4" />
-                        <h3 className="font-medium text-sm">Color</h3>
+                        <h3 className="font-medium text-sm">Color Presets</h3>
+                    </div>
+
+                    {/* Color Presets Grid */}
+                    <div className="grid grid-cols-6 gap-1 mb-3">
+                        {[
+                            { name: 'Black', color: '#000000' },
+                            { name: 'White', color: '#ffffff' },
+                            { name: 'Gray', color: '#6b7280' },
+                            { name: 'Slate', color: '#334155' },
+                            { name: 'Red', color: '#ef4444' },
+                            { name: 'Orange', color: '#f97316' },
+                            { name: 'Amber', color: '#f59e0b' },
+                            { name: 'Yellow', color: '#eab308' },
+                            { name: 'Lime', color: '#84cc16' },
+                            { name: 'Green', color: '#22c55e' },
+                            { name: 'Emerald', color: '#10b981' },
+                            { name: 'Teal', color: '#14b8a6' },
+                            { name: 'Cyan', color: '#06b6d4' },
+                            { name: 'Sky', color: '#0ea5e9' },
+                            { name: 'Blue', color: '#3b82f6' },
+                            { name: 'Indigo', color: '#6366f1' },
+                            { name: 'Violet', color: '#8b5cf6' },
+                            { name: 'Purple', color: '#a855f7' },
+                            { name: 'Fuchsia', color: '#d946ef' },
+                            { name: 'Pink', color: '#ec4899' },
+                            { name: 'Rose', color: '#f43f5e' },
+                            { name: 'Dark Red', color: '#991b1b' },
+                            { name: 'Dark Blue', color: '#1e3a8a' },
+                            { name: 'Dark Green', color: '#14532d' },
+                            { name: 'Navy', color: '#1e293b' },
+                            { name: 'Charcoal', color: '#1f2937' },
+                            { name: 'Brown', color: '#78350f' },
+                            { name: 'Beige', color: '#d4a574' },
+                            { name: 'Cream', color: '#fef3c7' },
+                            { name: 'Mint', color: '#d1fae5' }
+                        ].map((preset, index) => (
+                            <div
+                                key={index}
+                                onClick={() => onBackgroundChange({
+                                    ...backgroundSettings,
+                                    type: 'color',
+                                    backgroundColor: preset.color
+                                })}
+                                className={`aspect-square rounded cursor-pointer border-2 transition-all duration-200 group ${backgroundSettings.type === 'color' && backgroundSettings.backgroundColor === preset.color
+                                    ? 'border-purple-500 scale-110 shadow-lg ring-2 ring-purple-500'
+                                    : 'border-gray-600 hover:border-purple-300 hover:scale-110 hover:shadow-md'
+                                    }`}
+                                style={{ backgroundColor: preset.color }}
+                                title={preset.name}
+                            >
+                                {/* Checkmark for white/light colors */}
+                                {backgroundSettings.type === 'color' && backgroundSettings.backgroundColor === preset.color && (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                        <div className={`text-xs ${preset.color === '#ffffff' || preset.color === '#fef3c7' || preset.color === '#d1fae5' || preset.color === '#d4a574' ? 'text-gray-800' : 'text-white'}`}>
+                                            ✓
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="flex items-center gap-2 mb-2">
+                        <Square className="h-4 w-4" />
+                        <h3 className="font-medium text-sm">Custom Color</h3>
                     </div>
 
                     <div>
@@ -739,11 +803,10 @@ export default function RightSidebar({
                             <button
                                 key={shape}
                                 onClick={() => onWebcamSettingsChange({ ...webcamSettings, shape: shape as any })}
-                                className={`px-2 py-2 text-xs rounded-md transition-all duration-200 ${
-                                    webcamSettings.shape === shape
-                                        ? 'bg-purple-600 text-white scale-105'
-                                        : 'bg-gray-700 text-gray-400 hover:text-white hover:bg-gray-600'
-                                }`}
+                                className={`px-2 py-2 text-xs rounded-md transition-all duration-200 ${webcamSettings.shape === shape
+                                    ? 'bg-purple-600 text-white scale-105'
+                                    : 'bg-gray-700 text-gray-400 hover:text-white hover:bg-gray-600'
+                                    }`}
                             >
                                 {shape.charAt(0).toUpperCase() + shape.slice(1)}
                             </button>
@@ -940,12 +1003,49 @@ export default function RightSidebar({
     const renderLayoutTab = () => {
         const layouts = [
             {
+                name: 'Screen Left - Webcam Right',
+                description: 'Large screen on left, webcam on right',
+                preview: '⬜📹',
+                webcamPosition: { x: 65, y: 10 },
+                webcamSize: { width: 300, height: 450 },
+                webcamShape: 'rectangle' as const,
+                screenPosition: 'left' as const
+            },
+            {
+                name: 'Screen Right - Webcam Left',
+                description: 'Large screen on right, webcam on left',
+                preview: '📹⬜',
+                webcamPosition: { x: 5, y: 10 },
+                webcamSize: { width: 300, height: 450 },
+                webcamShape: 'rectangle' as const,
+                screenPosition: 'right' as const
+            },
+            {
+                name: 'Screen with Corner Webcam',
+                description: 'Full screen with small rounded webcam',
+                preview: '⬜🔘',
+                webcamPosition: { x: 5, y: 65 },
+                webcamSize: { width: 180, height: 180 },
+                webcamShape: 'circle' as const,
+                screenPosition: 'full' as const
+            },
+            {
+                name: 'Webcam Left - Screen Right',
+                description: 'Full height webcam, screen on right',
+                preview: '📹⬜',
+                webcamPosition: { x: 2, y: 5 },
+                webcamSize: { width: 280, height: 550 },
+                webcamShape: 'rectangle' as const,
+                screenPosition: 'right' as const
+            },
+            {
                 name: 'Picture in Picture - Bottom Right',
                 description: 'Webcam in bottom right corner',
                 preview: 'PiP BR',
                 webcamPosition: { x: 68, y: 72 },
                 webcamSize: { width: 280, height: 210 },
-                webcamShape: 'rectangle' as const
+                webcamShape: 'rectangle' as const,
+                screenPosition: 'full' as const
             },
             {
                 name: 'Picture in Picture - Bottom Left',
@@ -953,7 +1053,8 @@ export default function RightSidebar({
                 preview: 'PiP BL',
                 webcamPosition: { x: 2, y: 72 },
                 webcamSize: { width: 280, height: 210 },
-                webcamShape: 'rectangle' as const
+                webcamShape: 'rectangle' as const,
+                screenPosition: 'full' as const
             },
             {
                 name: 'Picture in Picture - Top Right',
@@ -961,7 +1062,8 @@ export default function RightSidebar({
                 preview: 'PiP TR',
                 webcamPosition: { x: 68, y: 2 },
                 webcamSize: { width: 280, height: 210 },
-                webcamShape: 'rectangle' as const
+                webcamShape: 'rectangle' as const,
+                screenPosition: 'full' as const
             },
             {
                 name: 'Picture in Picture - Top Left',
@@ -969,7 +1071,8 @@ export default function RightSidebar({
                 preview: 'PiP TL',
                 webcamPosition: { x: 2, y: 2 },
                 webcamSize: { width: 280, height: 210 },
-                webcamShape: 'rectangle' as const
+                webcamShape: 'rectangle' as const,
+                screenPosition: 'full' as const
             },
             {
                 name: 'Circle Bottom Right',
@@ -977,7 +1080,8 @@ export default function RightSidebar({
                 preview: '⭕ BR',
                 webcamPosition: { x: 75, y: 75 },
                 webcamSize: { width: 200, height: 200 },
-                webcamShape: 'circle' as const
+                webcamShape: 'circle' as const,
+                screenPosition: 'full' as const
             },
             {
                 name: 'Circle Bottom Left',
@@ -985,31 +1089,80 @@ export default function RightSidebar({
                 preview: '⭕ BL',
                 webcamPosition: { x: 2, y: 75 },
                 webcamSize: { width: 200, height: 200 },
-                webcamShape: 'circle' as const
+                webcamShape: 'circle' as const,
+                screenPosition: 'full' as const
             },
             {
-                name: 'Side by Side',
+                name: 'Rounded Square - Bottom Right',
+                description: 'Rounded square webcam in bottom right',
+                preview: '▢ BR',
+                webcamPosition: { x: 72, y: 70 },
+                webcamSize: { width: 220, height: 220 },
+                webcamShape: 'square' as const,
+                screenPosition: 'full' as const
+            },
+            {
+                name: 'Circle - Bottom Right',
+                description: 'Circle webcam in bottom right',
+                preview: '⭕ BR',
+                webcamPosition: { x: 75, y: 72 },
+                webcamSize: { width: 200, height: 200 },
+                webcamShape: 'circle' as const,
+                screenPosition: 'full' as const
+            },
+            {
+                name: 'Circle - Top Left',
+                description: 'Circle webcam in top left',
+                preview: '⭕ TL',
+                webcamPosition: { x: 3, y: 3 },
+                webcamSize: { width: 200, height: 200 },
+                webcamShape: 'circle' as const,
+                screenPosition: 'full' as const
+            },
+            {
+                name: 'Rounded Square - Top Left',
+                description: 'Rounded square webcam in top left',
+                preview: '▢ TL',
+                webcamPosition: { x: 3, y: 3 },
+                webcamSize: { width: 220, height: 220 },
+                webcamShape: 'square' as const,
+                screenPosition: 'full' as const
+            },
+            {
+                name: 'Circle - Bottom Left',
+                description: 'Circle webcam in bottom left',
+                preview: '⭕ BL',
+                webcamPosition: { x: 3, y: 72 },
+                webcamSize: { width: 200, height: 200 },
+                webcamShape: 'circle' as const,
+                screenPosition: 'full' as const
+            },
+            {
+                name: 'Rounded Square - Top Right',
+                description: 'Rounded square webcam in top right',
+                preview: '▢ TR',
+                webcamPosition: { x: 72, y: 3 },
+                webcamSize: { width: 220, height: 220 },
+                webcamShape: 'square' as const,
+                screenPosition: 'full' as const
+            },
+            {
+                name: 'Circle - Top Right',
+                description: 'Circle webcam in top right',
+                preview: '⭕ TR',
+                webcamPosition: { x: 75, y: 3 },
+                webcamSize: { width: 200, height: 200 },
+                webcamShape: 'circle' as const,
+                screenPosition: 'full' as const
+            },
+            {
+                name: 'Side by Side Equal',
                 description: 'Screen and webcam side by side',
                 preview: '⬜⬜',
-                webcamPosition: { x: 55, y: 25 },
-                webcamSize: { width: 350, height: 350 },
-                webcamShape: 'square' as const
-            },
-            {
-                name: 'Large Webcam Center',
-                description: 'Large centered webcam overlay',
-                preview: '⬜',
-                webcamPosition: { x: 30, y: 20 },
-                webcamSize: { width: 400, height: 500 },
-                webcamShape: 'rectangle' as const
-            },
-            {
-                name: 'Small Circle Top Right',
-                description: 'Small circular webcam',
-                preview: '⚪ TR',
-                webcamPosition: { x: 82, y: 2 },
-                webcamSize: { width: 130, height: 130 },
-                webcamShape: 'circle' as const
+                webcamPosition: { x: 52, y: 10 },
+                webcamSize: { width: 400, height: 450 },
+                webcamShape: 'rectangle' as const,
+                screenPosition: 'left' as const
             },
             {
                 name: 'Webcam Only',
@@ -1017,7 +1170,8 @@ export default function RightSidebar({
                 preview: '⬛',
                 webcamPosition: { x: 5, y: 5 },
                 webcamSize: { width: 800, height: 600 },
-                webcamShape: 'rectangle' as const
+                webcamShape: 'rectangle' as const,
+                screenPosition: 'none' as const
             }
         ]
 
@@ -1048,19 +1202,33 @@ export default function RightSidebar({
                             onClick={() => applyLayout(layout)}
                             className="group relative bg-gray-700 hover:bg-gray-600 rounded-lg p-3 transition-all duration-200 hover:scale-105 hover:shadow-lg text-left"
                         >
-                            {/* Preview Box */}
-                            <div className="aspect-video bg-gray-800 rounded mb-2 flex items-center justify-center text-2xl font-mono text-gray-500 group-hover:text-purple-400 transition-colors">
-                                {layout.preview}
+                            {/* Visual Preview Box */}
+                            <div className="aspect-video bg-gray-900 rounded mb-2 relative overflow-hidden border border-gray-600">
+                                {/* Screen/Content area */}
+                                <div className="absolute inset-0 bg-gradient-to-br from-gray-700 to-gray-800"></div>
+
+                                {/* Webcam representation */}
+                                <div
+                                    className="absolute bg-purple-500/30 border-2 border-purple-400/50 group-hover:border-purple-400 transition-colors"
+                                    style={{
+                                        left: `${layout.webcamPosition.x}%`,
+                                        top: `${layout.webcamPosition.y}%`,
+                                        width: `${Math.min(layout.webcamSize.width / 10, 40)}%`,
+                                        height: `${Math.min(layout.webcamSize.height / 10, 60)}%`,
+                                        borderRadius: layout.webcamShape === 'circle' ? '50%' :
+                                            layout.webcamShape === 'square' ? '8%' : '4%'
+                                    }}
+                                >
+                                    {/* Person icon in webcam */}
+                                    <div className="w-full h-full flex items-center justify-center">
+                                        <Webcam className="w-1/3 h-1/3 text-purple-300 opacity-60" />
+                                    </div>
+                                </div>
                             </div>
-                            
+
                             {/* Layout Name */}
-                            <div className="text-xs font-medium text-white mb-1">
+                            <div className="text-xs font-medium text-white text-center">
                                 {layout.name}
-                            </div>
-                            
-                            {/* Description */}
-                            <div className="text-[10px] text-gray-400">
-                                {layout.description}
                             </div>
 
                             {/* Hover Indicator */}
