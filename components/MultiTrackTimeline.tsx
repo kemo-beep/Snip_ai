@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useCallback, useMemo, useRef, useEffect } from "react"
+import { useState, useCallback, useMemo, useRef, useEffect, memo } from "react"
 import {
     Timeline,
     type TimelineEffect,
@@ -37,21 +37,7 @@ import {
     Copy,
     Slice,
 } from "lucide-react"
-
-interface Clip {
-    id: string
-    type: "video" | "audio" | "effect" | "text" | "image"
-    name: string
-    startTime: number
-    endTime: number
-    trackId: string
-    color: string
-    thumbnail?: string
-    waveform?: number[]
-    muted?: boolean
-    locked?: boolean
-    selected?: boolean
-}
+import { Clip } from "@/hooks/useClips"
 
 interface Track {
     id: string
@@ -91,7 +77,7 @@ interface MultiTrackTimelineProps {
     onAddClip: (clip: Clip) => void
 }
 
-export default function MultiTrackTimeline({
+const MultiTrackTimeline = memo(function MultiTrackTimeline({
     isPlaying,
     currentTime,
     duration,
@@ -1783,4 +1769,6 @@ export default function MultiTrackTimeline({
             )}
         </div>
     )
-}
+})
+
+export default MultiTrackTimeline

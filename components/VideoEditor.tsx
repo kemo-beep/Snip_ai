@@ -1,35 +1,18 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { Button } from '@/components/ui/button'
-import {
-    Play,
-    Pause,
-    SkipBack,
-    SkipForward,
-    Loader2,
-    RotateCcw,
-    Crop,
-    Settings,
-    Zap,
-    Undo2,
-    Redo2,
-    Sun,
-    Moon,
-    Grid3X3,
-    Clock,
-    Scissors
-} from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
 import MultiTrackTimeline from './MultiTrackTimeline'
 import RightSidebar from './RightSidebar'
 import ExportDialog, { ExportOptions } from './ExportDialog'
-import VideoAnnotation, { Annotation } from './VideoAnnotation'
+import VideoContainer from './VideoContainer'
+import VideoEditorToolbar from './VideoEditorToolbar'
 import { exportVideo as processVideoExport, downloadBlob } from '@/lib/videoExporter'
-import { ColorGradingPreset, applyPresetToCanvas } from '@/lib/templates/colorGradingPresets'
-import { AspectRatioTemplate } from '@/lib/templates/aspectRatioTemplates'
-import { BrandKit } from '@/lib/templates/brandKit'
-import { TransitionPreset } from '@/lib/templates/transitionPresets'
 import { EnhancementConfig, EnhancementSettings, getDefaultPreset } from '@/lib/videoEnhancement'
+import { useVideoEditorStore } from '@/hooks/useVideoEditorStore'
+import { Clip } from '@/hooks/useClips'
+import { createTemplateHandlers } from '@/lib/videoEditor/templateHandlers'
+import { getBackgroundStyle, getShadowStyle, getDefaultBackgroundSettings, BackgroundSettings } from '@/lib/videoEditor/backgroundUtils'
+import { VIDEO_EDITOR_CONSTANTS, VIDEO_EDITOR_STYLES } from '@/lib/videoEditor/constants'
 
 interface VideoEditorProps {
     videoUrl: string
@@ -55,104 +38,135 @@ interface Overlay {
     endTime: number
 }
 
-
-
 export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: VideoEditorProps) {
-    const videoRef = useRef<HTMLVideoElement>(null)
-    const canvasRef = useRef<HTMLCanvasElement>(null)
-    const [isPlaying, setIsPlaying] = useState(false)
-    const [currentTime, setCurrentTime] = useState(0)
-    const [duration, setDuration] = useState(0)
+    // Local state for UI-specific things
     const [trimRange, setTrimRange] = useState<TrimRange>({ start: 0, end: 0 })
     const [overlays, setOverlays] = useState<Overlay[]>([])
-    const [annotations, setAnnotations] = useState<Annotation[]>([])
-    const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
-    const [selectedAnnotationTool, setSelectedAnnotationTool] = useState<Annotation['type'] | null>(null)
-    const [annotationColor, setAnnotationColor] = useState('#ff0000')
-    const [annotationStrokeWidth, setAnnotationStrokeWidth] = useState(3)
-    const [annotationFontSize, setAnnotationFontSize] = useState(24)
-    const [videoContainerRef, setVideoContainerRef] = useState<HTMLDivElement | null>(null)
-    const [isProcessing, setIsProcessing] = useState(false)
-    const [isVideoReady, setIsVideoReady] = useState(false)
-    const [videoLoadTimeout, setVideoLoadTimeout] = useState<NodeJS.Timeout | null>(null)
-    const [forceReady, setForceReady] = useState(false)
-    const [isDarkMode, setIsDarkMode] = useState(true)
-    const [aspectRatio, setAspectRatio] = useState('16:9')
-    const [isDragging, setIsDragging] = useState(false)
     const [hoveredOverlay, setHoveredOverlay] = useState<string | null>(null)
-    const [clips, setClips] = useState<Array<{
-        id: string
-        type: 'video' | 'audio' | 'effect'
-        name: string
-        duration: number
-        startTime: number
-        endTime: number
-        trackId: string
-        thumbnail?: string
-        waveform?: number[]
-        color: string
-        muted?: boolean
-        locked?: boolean
-    }>>([])
-    const [backgroundSettings, setBackgroundSettings] = useState({
-        type: 'wallpaper' as 'wallpaper' | 'gradient' | 'color' | 'image',
-        wallpaperIndex: 0,
-        wallpaperUrl: '',
-        blurAmount: 0,
-        padding: 3,
-        borderRadius: 12,
-        shadowIntensity: 0,
-        backgroundColor: '#000000',
-        gradientColors: ['#ff6b6b', '#4ecdc4']
-    })
-    const [showExportDialog, setShowExportDialog] = useState(false)
-    const [currentColorPreset, setCurrentColorPreset] = useState<string | undefined>()
-    const [currentAspectRatio, setCurrentAspectRatio] = useState<string | undefined>('youtube-standard')
-    const [currentBrandKit, setCurrentBrandKit] = useState<string | undefined>()
-    const [colorGradingFilters, setColorGradingFilters] = useState<any>(null)
 
-    // Enhancement state
-    const [enhancementConfig, setEnhancementConfig] = useState<EnhancementConfig>(() => {
-        const defaultPreset = getDefaultPreset()
-        return defaultPreset.config
-    })
-    const [enhancementSettings, setEnhancementSettings] = useState<EnhancementSettings>(() => {
-        const defaultPreset = getDefaultPreset()
-        return defaultPreset.settings
-    })
+    // Zustand store - single source of truth
+    const {
+        // Refs
+        videoRef,
+        webcamVideoRef,
 
-    const handleAddClip = (clip: any) => {
-        setClips(prev => [...prev, clip])
-    }
+        // Video player state
+        isPlaying,
+        currentTime,
+        duration,
+        isVideoReady,
+        forceReady,
 
-    const handleUpdateClip = (clipId: string, updates: any) => {
-        setClips(prev => prev.map(clip =>
-            clip.id === clipId ? { ...clip, ...updates } : clip
-        ))
-    }
+        // Video player actions
+        togglePlayPause,
+        seekTo,
+        rewind,
+        fastForward,
+        forceVideoReady,
 
-    const handleDeleteClip = (clipId: string) => {
-        setClips(prev => prev.filter(clip => clip.id !== clipId))
-    }
+        // Clips
+        clips,
+        addClip,
+        updateClip,
+        deleteClip,
+        duplicateClip,
+        addRecordedVideoClip,
+        addWebcamClip,
 
-    const handleDuplicateClip = (clipId: string) => {
-        const clip = clips.find(c => c.id === clipId)
-        if (clip) {
-            const newClip = {
-                ...clip,
-                id: `${clip.id}-copy-${Date.now()}`,
-                name: `${clip.name} (Copy)`,
-                startTime: clip.endTime, // Place after original
-                endTime: clip.endTime + (clip.endTime - clip.startTime)
-            }
-            setClips(prev => [...prev, newClip])
-        }
-    }
+        // Webcam overlay
+        webcamVideoUrl,
+        webcamOverlayPosition,
+        webcamOverlaySize,
+        webcamSettings,
+        setWebcamVideoUrl,
+        setWebcamOverlayPosition,
+        setWebcamOverlaySize,
+        setWebcamSettings,
+        handleWebcamMouseDown,
+        handleWebcamResizeMouseDown,
+
+        // Annotations
+        annotations,
+        selectedAnnotation,
+        selectedAnnotationTool,
+        annotationColor,
+        annotationStrokeWidth,
+        annotationFontSize,
+        setSelectedAnnotation,
+        setSelectedAnnotationTool,
+        setAnnotationColor,
+        setAnnotationStrokeWidth,
+        setAnnotationFontSize,
+        addAnnotation,
+        updateAnnotation,
+        removeAnnotation,
+        handleAnnotationMouseDown,
+        handleAnnotationResize,
+
+        // UI state
+        isProcessing,
+        isDarkMode,
+        aspectRatio,
+        backgroundSettings,
+        showExportDialog,
+        setProcessing,
+        setDarkMode,
+        setAspectRatio,
+        setBackgroundSettings,
+        setShowExportDialog,
+
+        // Template state
+        currentColorPreset,
+        currentAspectRatio,
+        currentBrandKit,
+        colorGradingFilters,
+        setCurrentColorPreset,
+        setCurrentAspectRatio,
+        setCurrentBrandKit,
+        setColorGradingFilters,
+
+        // Enhancement state
+        enhancementConfig,
+        enhancementSettings,
+        setEnhancementConfig,
+        setEnhancementSettings
+    } = useVideoEditorStore()
+
+    // Template handlers
+    const templateHandlers = createTemplateHandlers(
+        setCurrentColorPreset,
+        setColorGradingFilters,
+        setCurrentAspectRatio,
+        setAspectRatio,
+        setCurrentBrandKit,
+        setBackgroundSettings
+    )
+
+    // Memoized style calculations to prevent re-renders
+    const videoContainerStyle = useMemo(() => ({
+        aspectRatio: aspectRatio === '16:9' ? '16/9' :
+            aspectRatio === '4:3' ? '4/3' :
+                aspectRatio === '1:1' ? '1/1' :
+                    aspectRatio === '21:9' ? '21/9' :
+                        aspectRatio === '9:16' ? '9/16' : '16/9',
+        maxWidth: `${VIDEO_EDITOR_CONSTANTS.MAX_VIDEO_WIDTH_PERCENT}%`,
+        maxHeight: `${VIDEO_EDITOR_CONSTANTS.MAX_VIDEO_HEIGHT_PERCENT}%`,
+        width: 'fit-content',
+        height: 'fit-content',
+        minWidth: `${VIDEO_EDITOR_CONSTANTS.MIN_VIDEO_WIDTH}px`,
+        minHeight: `${VIDEO_EDITOR_CONSTANTS.MIN_VIDEO_HEIGHT}px`,
+        borderRadius: `${backgroundSettings.borderRadius}px`,
+        ...getShadowStyle(backgroundSettings)
+    }), [aspectRatio, backgroundSettings])
+
+    const backgroundLayerStyle = useMemo(() => ({
+        ...getBackgroundStyle(backgroundSettings),
+        borderRadius: `${backgroundSettings.borderRadius}px`
+    }), [backgroundSettings])
 
     // Enhancement configuration handlers
     const handleEnhancementConfigChange = (config: EnhancementConfig) => {
         setEnhancementConfig(config)
-        // Persist to localStorage
         try {
             localStorage.setItem('videoEditor_enhancementConfig', JSON.stringify(config))
         } catch (error) {
@@ -162,7 +176,6 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
 
     const handleEnhancementSettingsChange = (settings: EnhancementSettings) => {
         setEnhancementSettings(settings)
-        // Persist to localStorage
         try {
             localStorage.setItem('videoEditor_enhancementSettings', JSON.stringify(settings))
         } catch (error) {
@@ -170,26 +183,12 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
         }
     }
 
-
-    // Simple approach: Force video ready after a very short delay
-    const [webcamVideoUrl, setWebcamVideoUrl] = useState<string | null>(webcamUrl || null)
-    const [webcamOverlayPosition, setWebcamOverlayPosition] = useState({ x: 2, y: 2 })
-    const [webcamOverlaySize, setWebcamOverlaySize] = useState({ width: 100, height: 100 })
-    const [webcamSettings, setWebcamSettings] = useState({
-        visible: true,
-        shape: 'rectangle' as 'rectangle' | 'square' | 'circle',
-        shadowIntensity: 0,
-        borderWidth: 2,
-        borderColor: '#3b82f6'
-    })
-    const webcamVideoRef = useRef<HTMLVideoElement>(null)
-
+    // Update webcam URL when prop changes
     useEffect(() => {
         if (webcamUrl) {
-            console.log('Webcam URL provided:', webcamUrl)
             setWebcamVideoUrl(webcamUrl)
         }
-    }, [webcamUrl])
+    }, [webcamUrl, setWebcamVideoUrl])
 
     // Load enhancement configuration from localStorage on mount
     useEffect(() => {
@@ -208,304 +207,30 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
         } catch (error) {
             console.warn('Failed to load enhancement configuration from localStorage:', error)
         }
-    }, [])
+    }, [setEnhancementConfig, setEnhancementSettings])
 
-
+    // Add clips when video is ready
     useEffect(() => {
-        const video = videoRef.current
-        if (video) {
-            // Try to load the video immediately
-            console.log('Video element found, attempting to load:', videoUrl)
-            video.load()
-
-            const addRecordedVideoClip = (duration: number) => {
-                console.log('[addRecordedVideoClip] Called with duration:', duration, 'videoUrl:', !!videoUrl)
-
-                if (!videoUrl) {
-                    console.error('[addRecordedVideoClip] No videoUrl available')
-                    return
-                }
-
-                if (!duration || duration <= 0 || !isFinite(duration)) {
-                    console.error('[addRecordedVideoClip] Invalid duration:', duration)
-                    return
-                }
-
-                console.log('[addRecordedVideoClip] Adding/updating recorded video clip with duration:', duration)
-                setClips(prev => {
-                    console.log('[addRecordedVideoClip] Current clips:', prev.length)
-
-                    // Check if recorded video already exists
-                    const existingIndex = prev.findIndex(clip => clip.name === 'Recorded Video')
-
-                    if (existingIndex !== -1) {
-                        // Update existing clip with correct duration
-                        console.log('[addRecordedVideoClip] Updating existing clip at index', existingIndex, 'from', prev[existingIndex].endTime, 'to', duration)
-                        const updated = [...prev]
-                        updated[existingIndex] = {
-                            ...updated[existingIndex],
-                            duration: duration,
-                            endTime: duration,
-                        }
-                        console.log('[addRecordedVideoClip] Updated clips:', updated.length)
-                        return updated
-                    }
-
-                    // Add new clip
-                    const recordedVideoClip = {
-                        id: `recorded-video-${Date.now()}`,
-                        type: 'video' as const,
-                        name: 'Recorded Video',
-                        duration: duration,
-                        startTime: 0,
-                        endTime: duration,
-                        trackId: 'video-1',
-                        thumbnail: videoUrl,
-                        color: '#3b82f6',
-                        muted: false,
-                        locked: false
-                    }
-                    console.log('[addRecordedVideoClip] Adding new clip:', recordedVideoClip)
-                    const newClips = [...prev, recordedVideoClip]
-                    console.log('[addRecordedVideoClip] New clips array:', newClips.length)
-                    return newClips
-                })
-            }
-
-            const addWebcamClip = (duration: number) => {
-                console.log('[addWebcamClip] Called with duration:', duration, 'webcamUrl:', !!webcamUrl)
-
-                if (!webcamUrl) {
-                    console.error('[addWebcamClip] No webcamUrl available')
-                    return
-                }
-
-                if (!duration || duration <= 0 || !isFinite(duration)) {
-                    console.error('[addWebcamClip] Invalid duration:', duration)
-                    return
-                }
-
-                console.log('[addWebcamClip] Adding webcam clip with duration:', duration)
-                setClips(prev => {
-                    // Check if webcam clip already exists
-                    const existingIndex = prev.findIndex(clip => clip.name === 'Webcam')
-
-                    if (existingIndex !== -1) {
-                        console.log('[addWebcamClip] Webcam clip already exists, skipping')
-                        return prev
-                    }
-
-                    // Add new webcam clip on effect track
-                    const webcamClip = {
-                        id: `webcam-${Date.now()}`,
-                        type: 'video' as const,
-                        name: 'Webcam',
-                        duration: duration,
-                        startTime: 0,
-                        endTime: duration,
-                        trackId: 'effect-1',
-                        thumbnail: webcamUrl,
-                        color: '#a855f7',
-                        muted: false,
-                        locked: false
-                    }
-                    console.log('[addWebcamClip] Adding new webcam clip:', webcamClip)
-                    return [...prev, webcamClip]
-                })
-            }
-
-            const handleLoadedMetadata = () => {
-                console.log('Video metadata loaded, duration:', video.duration)
-                if (isFinite(video.duration) && video.duration > 0) {
-                    setDuration(video.duration)
-                    setTrimRange({ start: 0, end: video.duration })
-                    setIsVideoReady(true)
-                    addRecordedVideoClip(video.duration)
-
-                    // Add webcam clip if available
-                    if (webcamUrl) {
-                        addWebcamClip(video.duration)
-                    }
-                } else {
-                    console.warn('Video duration is invalid:', video.duration)
-                }
-            }
-
-            const handleTimeUpdate = () => {
-                setCurrentTime(video.currentTime)
-            }
-
-            const handleCanPlay = () => {
-                console.log('Video can play, readyState:', video.readyState, 'duration:', video.duration)
-                if (isFinite(video.duration) && video.duration > 0) {
-                    console.log('✅ Valid video duration detected:', video.duration)
-                    setDuration(video.duration)
-                    setTrimRange({ start: 0, end: video.duration })
-                    setIsVideoReady(true)
-                    addRecordedVideoClip(video.duration)
-                    if (webcamUrl) {
-                        addWebcamClip(video.duration)
-                    }
-                } else {
-                    console.warn('⚠️ Video duration not available yet, will retry on durationchange event')
-                }
-            }
-
-            const handleLoadStart = () => {
-                console.log('Video load started')
-                setIsVideoReady(false)
-
-                // Set a timeout to force video ready after 3 seconds
-                const timeout = setTimeout(() => {
-                    console.log('Video load timeout - checking state')
-
-                    // Try to get duration one more time
-                    if (video.readyState >= 1 && isFinite(video.duration) && video.duration > 0) {
-                        console.log('✅ Duration available after timeout:', video.duration)
-                        setDuration(video.duration)
-                        setTrimRange({ start: 0, end: video.duration })
-                        setIsVideoReady(true)
-                        addRecordedVideoClip(video.duration)
-                    } else {
-                        // Last resort: Show editor and let durationchange event add the clip
-                        console.warn('⚠️ Video duration still not available after timeout')
-                        console.warn('ReadyState:', video.readyState, 'Duration:', video.duration)
-                        console.warn('Will show editor and wait for durationchange event')
-                        setForceReady(true)
-                        setIsVideoReady(true)
-                        // Set a placeholder duration for the timeline (will be updated by durationchange)
-                        setDuration(60)
-                        setTrimRange({ start: 0, end: 60 })
-                    }
-                }, 3000)
-
-                setVideoLoadTimeout(timeout)
-            }
-
-            const handleError = (e: Event) => {
-                console.error('Video failed to load:', e)
-                setIsVideoReady(false)
-            }
-
-            const handleLoadedData = () => {
-                console.log('Video data loaded, duration:', video.duration)
-                if (isFinite(video.duration) && video.duration > 0) {
-                    console.log('✅ Setting duration from loadeddata:', video.duration)
-                    setDuration(video.duration)
-                    setTrimRange({ start: 0, end: video.duration })
-                    setIsVideoReady(true)
-                    addRecordedVideoClip(video.duration)
-                    if (webcamUrl) {
-                        addWebcamClip(video.duration)
-                    }
-                }
-            }
-
-            const handleDurationChange = () => {
-                console.log('Duration changed event, new duration:', video.duration)
-                if (isFinite(video.duration) && video.duration > 0) {
-                    console.log('✅ Setting duration from durationchange:', video.duration)
-                    setDuration(video.duration)
-                    setTrimRange({ start: 0, end: video.duration })
-                    setIsVideoReady(true)
-                    addRecordedVideoClip(video.duration)
-                    if (webcamUrl) {
-                        addWebcamClip(video.duration)
-                    }
-                }
-            }
-
-            // Check if video is already loaded
-            if (video.readyState >= 1) {
-                console.log('Video already loaded, setting ready state')
-                handleLoadedMetadata()
-            } else {
-                // Immediate fallback: try to load the video after a very short delay
-                const immediateTimer = setTimeout(() => {
-                    console.log('Immediate fallback: checking video state')
-                    if (video.readyState >= 1 && isFinite(video.duration) && video.duration > 0) {
-                        console.log('✅ Immediate fallback: Video loaded with duration', video.duration)
-                        setDuration(video.duration)
-                        setTrimRange({ start: 0, end: video.duration })
-                        setIsVideoReady(true)
-                        addRecordedVideoClip(video.duration)
-                        if (webcamUrl) {
-                            addWebcamClip(video.duration)
-                        }
-                    } else {
-                        console.log('⚠️ Immediate fallback: Video not ready yet, will wait for durationchange event')
-                        // Set ready but don't add clip yet
-                        setIsVideoReady(true)
-                    }
-                }, 500)
-
-                // Longer fallback: try to load the video after a longer delay
-                const fallbackTimer = setTimeout(() => {
-                    if (video.readyState >= 1 && isFinite(video.duration) && video.duration > 0) {
-                        console.log('✅ Longer fallback: Video loaded with duration', video.duration)
-                        setDuration(video.duration)
-                        setTrimRange({ start: 0, end: video.duration })
-                        setIsVideoReady(true)
-                        addRecordedVideoClip(video.duration)
-                        if (webcamUrl) {
-                            addWebcamClip(video.duration)
-                        }
-                    } else {
-                        console.warn('⚠️ Longer fallback: Video still not ready, will wait for durationchange event')
-                        // Set ready but don't add clip yet
-                        setIsVideoReady(true)
-                    }
-                }, 1500)
-            }
-
-            video.addEventListener('loadstart', handleLoadStart)
-            video.addEventListener('loadedmetadata', handleLoadedMetadata)
-            video.addEventListener('loadeddata', handleLoadedData)
-            video.addEventListener('durationchange', handleDurationChange)
-            video.addEventListener('timeupdate', handleTimeUpdate)
-            video.addEventListener('canplay', handleCanPlay)
-            video.addEventListener('error', handleError)
-
-            return () => {
-                if (videoLoadTimeout) {
-                    clearTimeout(videoLoadTimeout)
-                }
-                video.removeEventListener('loadstart', handleLoadStart)
-                video.removeEventListener('loadedmetadata', handleLoadedMetadata)
-                video.removeEventListener('loadeddata', handleLoadedData)
-                video.removeEventListener('durationchange', handleDurationChange)
-                video.removeEventListener('timeupdate', handleTimeUpdate)
-                video.removeEventListener('canplay', handleCanPlay)
-                video.removeEventListener('error', handleError)
+        if (isVideoReady && duration > 0) {
+            addRecordedVideoClip(duration, videoUrl)
+            if (webcamUrl) {
+                addWebcamClip(duration, webcamUrl)
             }
         }
-    }, [videoUrl])
+    }, [isVideoReady, duration, videoUrl, webcamUrl, addRecordedVideoClip, addWebcamClip])
 
-
-    const togglePlayPause = () => {
-        const video = videoRef.current
-        const webcamVideo = webcamVideoRef.current
-        if (video) {
-            if (video.paused) {
-                video.play()
-                if (webcamVideo) webcamVideo.play()
-                setIsPlaying(true)
-            } else {
-                video.pause()
-                if (webcamVideo) webcamVideo.pause()
-                setIsPlaying(false)
-            }
+    // Update trim range when video is ready
+    useEffect(() => {
+        if (isVideoReady && duration > 0) {
+            setTrimRange({ start: 0, end: duration })
         }
-    }
+    }, [isVideoReady, duration])
 
-    const seekTo = (time: number) => {
-        const video = videoRef.current
-        const webcamVideo = webcamVideoRef.current
-        if (video && isFinite(time) && time >= 0 && time <= duration && isVideoReady) {
-            video.currentTime = time
-            if (webcamVideo) webcamVideo.currentTime = time
-            setCurrentTime(time)
-        }
+    // Utility functions
+    const formatTime = (seconds: number) => {
+        const mins = Math.floor(seconds / 60)
+        const secs = Math.floor(seconds % 60)
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
     }
 
     const handleTrimStartChange = (value: number[]) => {
@@ -536,16 +261,14 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
         setOverlays(prev => prev.filter(overlay => overlay.id !== id))
     }
 
-    const addAnnotation = (annotation: Annotation) => {
-        console.log('Adding annotation:', annotation)
-        setAnnotations(prev => [...prev, annotation])
-
-        // Also add to clips for timeline display
-        const annotationClip = {
+    // Wrapper functions for annotation handlers
+    const handleAddAnnotation = (annotation: any) => {
+        addAnnotation(annotation)
+        // Also add to clips for timeline
+        const annotationClip: Clip = {
             id: annotation.id,
-            type: 'effect' as const,
+            type: 'effect',
             name: annotation.type === 'text' ? `Text: ${annotation.content?.substring(0, 20) || 'Text'}` : `${annotation.type.charAt(0).toUpperCase() + annotation.type.slice(1)}`,
-            duration: annotation.endTime - annotation.startTime,
             startTime: annotation.startTime,
             endTime: annotation.endTime,
             trackId: 'effect-2',
@@ -553,104 +276,30 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
             muted: false,
             locked: false
         }
-        setClips(prev => [...prev, annotationClip])
-
-        // Clear tool selection after adding
-        setSelectedAnnotationTool(null)
+        addClip(annotationClip)
     }
 
-    const updateAnnotation = (id: string, updates: Partial<Annotation>) => {
-        setAnnotations(prev => prev.map(ann =>
-            ann.id === id ? { ...ann, ...updates } : ann
-        ))
-
-        // Update corresponding clip
-        setClips(prev => prev.map(clip => {
-            if (clip.id === id) {
-                const annotation = annotations.find(a => a.id === id)
-                if (annotation) {
-                    return {
-                        ...clip,
-                        startTime: updates.startTime ?? clip.startTime,
-                        endTime: updates.endTime ?? clip.endTime,
-                        duration: (updates.endTime ?? clip.endTime) - (updates.startTime ?? clip.startTime),
-                        color: updates.color ?? clip.color
-                    }
-                }
-            }
-            return clip
-        }))
+    const handleUpdateAnnotation = (id: string, updates: any) => {
+        updateAnnotation(id, updates)
+        // Also update clips for timeline
+        updateClip(id, {
+            startTime: updates.startTime,
+            endTime: updates.endTime,
+            color: updates.color
+        })
     }
 
-    const removeAnnotation = (id: string) => {
-        setAnnotations(prev => prev.filter(ann => ann.id !== id))
-        setClips(prev => prev.filter(clip => clip.id !== id))
-        if (selectedAnnotation === id) {
-            setSelectedAnnotation(null)
-        }
+    const handleRemoveAnnotation = (id: string) => {
+        removeAnnotation(id)
+        deleteClip(id)
     }
 
-    const handleAnnotationMouseDown = (e: React.MouseEvent<HTMLDivElement>, annotationId: string) => {
-        e.preventDefault()
-        e.stopPropagation()
-        setSelectedAnnotation(annotationId)
-
-        const annotation = annotations.find(a => a.id === annotationId)
-        if (!annotation) return
-
-        const startX = e.clientX
-        const startY = e.clientY
-        const startLeft = annotation.x
-        const startTop = annotation.y
-
-        const handleMouseMove = (e: MouseEvent) => {
-            const deltaX = ((e.clientX - startX) / window.innerWidth) * 100
-            const deltaY = ((e.clientY - startY) / window.innerHeight) * 100
-
-            updateAnnotation(annotationId, {
-                x: Math.max(0, Math.min(100, startLeft + deltaX)),
-                y: Math.max(0, Math.min(100, startTop + deltaY))
-            })
-        }
-
-        const handleMouseUp = () => {
-            document.removeEventListener('mousemove', handleMouseMove)
-            document.removeEventListener('mouseup', handleMouseUp)
-        }
-
-        document.addEventListener('mousemove', handleMouseMove)
-        document.addEventListener('mouseup', handleMouseUp)
+    const handleAnnotationMouseDownWrapper = (e: React.MouseEvent<HTMLDivElement>, annotationId: string) => {
+        handleAnnotationMouseDown(e, annotationId)
     }
 
-    const handleAnnotationResize = (e: React.MouseEvent<HTMLDivElement>, annotationId: string) => {
-        e.preventDefault()
-        e.stopPropagation()
-
-        const annotation = annotations.find(a => a.id === annotationId)
-        if (!annotation || !annotation.width || !annotation.height) return
-
-        const startX = e.clientX
-        const startY = e.clientY
-        const startWidth = annotation.width
-        const startHeight = annotation.height
-
-        const handleMouseMove = (e: MouseEvent) => {
-            const deltaX = e.clientX - startX
-            const deltaY = e.clientY - startY
-
-            updateAnnotation(annotationId, {
-                width: Math.max(50, startWidth + deltaX),
-                height: Math.max(30, startHeight + deltaY)
-            })
-        }
-
-        const handleMouseUp = () => {
-            document.removeEventListener('mousemove', handleMouseMove)
-            document.removeEventListener('mouseup', handleMouseUp)
-        }
-
-        document.addEventListener('mousemove', handleMouseMove)
-        document.addEventListener('mouseup', handleMouseUp)
+    const handleAnnotationResizeWrapper = (e: React.MouseEvent<HTMLDivElement>, annotationId: string) => {
+        handleAnnotationResize(e, annotationId)
     }
 
     const handleExportClick = () => {
@@ -658,7 +307,7 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
     }
 
     const handleExport = async (options: ExportOptions, onProgressUpdate: (progress: number) => void) => {
-        setIsProcessing(true)
+        setProcessing(true)
         try {
             console.log('Starting export with options:', options)
 
@@ -666,7 +315,7 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                 videoUrl,
                 webcamUrl: webcamVideoUrl || undefined,
                 options,
-                videoDuration: duration, // Pass the actual video duration
+                videoDuration: duration,
                 webcamSettings: {
                     visible: webcamSettings.visible && options.includeWebcam,
                     position: webcamOverlayPosition,
@@ -722,178 +371,13 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
             alert('Failed to export video. Please try again.')
             throw error
         } finally {
-            setIsProcessing(false)
+            setProcessing(false)
         }
-    }
-
-    const formatTime = (seconds: number) => {
-        const mins = Math.floor(seconds / 60)
-        const secs = Math.floor(seconds % 60)
-        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-    }
-
-    const handleRewind = () => {
-        seekTo(Math.max(0, currentTime - 5))
-    }
-
-    const handleFastForward = () => {
-        seekTo(Math.min(duration, currentTime + 5))
-    }
-
-    const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-        e.preventDefault()
-        const startX = e.clientX
-        const startY = e.clientY
-        const startLeft = webcamOverlayPosition.x
-        const startTop = webcamOverlayPosition.y
-
-        const handleMouseMove = (e: MouseEvent) => {
-            const newX = startLeft + e.clientX - startX
-            const newY = startTop + e.clientY - startY
-            setWebcamOverlayPosition({ x: newX, y: newY })
-        }
-
-        const handleMouseUp = () => {
-            document.removeEventListener('mousemove', handleMouseMove)
-            document.removeEventListener('mouseup', handleMouseUp)
-        }
-
-        document.addEventListener('mousemove', handleMouseMove)
-        document.addEventListener('mouseup', handleMouseUp)
-    }
-
-    const handleResizeMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-        e.preventDefault()
-        e.stopPropagation()
-        const startX = e.clientX
-        const startY = e.clientY
-        const startWidth = webcamOverlaySize.width
-        const startHeight = webcamOverlaySize.height
-
-        const handleMouseMove = (e: MouseEvent) => {
-            const newWidth = startWidth + e.clientX - startX
-            const newHeight = startHeight + e.clientY - startY
-            setWebcamOverlaySize({ width: newWidth, height: newHeight })
-        }
-
-        const handleMouseUp = () => {
-            document.removeEventListener('mousemove', handleMouseMove)
-            document.removeEventListener('mouseup', handleMouseUp)
-        }
-
-        document.addEventListener('mousemove', handleMouseMove)
-        document.addEventListener('mouseup', handleMouseUp)
     }
 
     const handleCrop = () => {
         // Placeholder for crop functionality
         console.log('Crop functionality coming soon')
-    }
-
-    // Template handlers
-    const handleApplyColorGrading = (preset: ColorGradingPreset) => {
-        console.log('Applying color grading preset:', preset.name)
-        setCurrentColorPreset(preset.id)
-        setColorGradingFilters(preset.filters)
-        // The filters will be applied during video rendering/export
-    }
-
-    const handleApplyAspectRatio = (template: AspectRatioTemplate) => {
-        console.log('Applying aspect ratio template:', template.name, template.ratio)
-        setCurrentAspectRatio(template.id)
-        setAspectRatio(template.ratio)
-        // Update canvas dimensions based on template
-        const canvas = canvasRef.current
-        if (canvas) {
-            canvas.width = template.width
-            canvas.height = template.height
-        }
-    }
-
-    const handleApplyBrandKit = (brandKit: BrandKit) => {
-        console.log('Applying brand kit:', brandKit.name)
-        setCurrentBrandKit(brandKit.id)
-        // Apply brand colors to background
-        const primaryColor = brandKit.colors.find(c => c.usage === 'primary')
-        const secondaryColor = brandKit.colors.find(c => c.usage === 'secondary')
-        if (primaryColor && secondaryColor) {
-            setBackgroundSettings(prev => ({
-                ...prev,
-                type: 'gradient',
-                gradientColors: [primaryColor.hex, secondaryColor.hex]
-            }))
-        }
-    }
-
-    const handleApplyTransition = (transition: TransitionPreset) => {
-        console.log('Applying transition:', transition.name)
-        // Add transition to timeline between clips
-        // This would be implemented with the timeline system
-        alert(`Transition "${transition.name}" will be applied between clips. Full implementation coming soon!`)
-    }
-
-    const getBackgroundStyle = () => {
-        const { type, wallpaperIndex, wallpaperUrl, blurAmount, backgroundColor, gradientColors } = backgroundSettings
-
-        let backgroundStyle: React.CSSProperties = {}
-
-        switch (type) {
-            case 'wallpaper':
-                if (wallpaperUrl) {
-                    backgroundStyle = {
-                        backgroundImage: `url(${wallpaperUrl})`,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center'
-                    }
-                } else {
-                    // Fallback to gradient if no URL
-                    backgroundStyle = {
-                        background: `linear-gradient(45deg, 
-                            hsl(${wallpaperIndex * 24}, 70%, 60%), 
-                            hsl(${wallpaperIndex * 24 + 120}, 70%, 60%), 
-                            hsl(${wallpaperIndex * 24 + 240}, 70%, 60%)
-                        )`
-                    }
-                }
-                break
-            case 'gradient':
-                backgroundStyle = {
-                    background: `linear-gradient(45deg, ${gradientColors[0]}, ${gradientColors[1]})`
-                }
-                break
-            case 'color':
-                backgroundStyle = {
-                    backgroundColor: backgroundColor
-                }
-                break
-            case 'image':
-                // For now, just use a placeholder
-                backgroundStyle = {
-                    background: 'linear-gradient(45deg, #667eea 0%, #764ba2 100%)'
-                }
-                break
-        }
-
-        // Apply blur only to the background layer
-        if (blurAmount > 0) {
-            backgroundStyle.filter = `blur(${blurAmount * 0.1}px)`
-        }
-
-        return backgroundStyle
-    }
-
-    const getShadowStyle = () => {
-        const { shadowIntensity } = backgroundSettings
-        if (shadowIntensity === 0) return {}
-
-        // Calculate shadow based on intensity (0-100)
-        const blur = Math.round(shadowIntensity * 0.8) // 0-80px
-        const spread = Math.round(shadowIntensity * 0.2) // 0-20px
-        const opacity = Math.min(shadowIntensity / 100 * 0.5, 0.5) // 0-0.5
-
-        return {
-            boxShadow: `0 ${Math.round(shadowIntensity * 0.3)}px ${blur}px ${spread}px rgba(0, 0, 0, ${opacity})`
-        }
     }
 
     // Keyboard shortcuts
@@ -902,22 +386,22 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
 
             switch (e.key) {
-                case ' ':
+                case VIDEO_EDITOR_CONSTANTS.KEYBOARD_SHORTCUTS.SPACE:
                     e.preventDefault()
                     togglePlayPause()
                     break
-                case 'ArrowLeft':
+                case VIDEO_EDITOR_CONSTANTS.KEYBOARD_SHORTCUTS.ARROW_LEFT:
                     e.preventDefault()
-                    handleRewind()
+                    rewind()
                     break
-                case 'ArrowRight':
+                case VIDEO_EDITOR_CONSTANTS.KEYBOARD_SHORTCUTS.ARROW_RIGHT:
                     e.preventDefault()
-                    handleFastForward()
+                    fastForward()
                     break
-                case 'Escape':
+                case VIDEO_EDITOR_CONSTANTS.KEYBOARD_SHORTCUTS.ESCAPE:
                     onCancel()
                     break
-                case 'e':
+                case VIDEO_EDITOR_CONSTANTS.KEYBOARD_SHORTCUTS.EXPORT:
                     if (e.ctrlKey || e.metaKey) {
                         e.preventDefault()
                         handleExportClick()
@@ -928,10 +412,10 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
 
         document.addEventListener('keydown', handleKeyDown)
         return () => document.removeEventListener('keydown', handleKeyDown)
-    }, [togglePlayPause, handleRewind, handleFastForward, onCancel, handleExportClick])
+    }, [togglePlayPause, rewind, fastForward, onCancel, handleExportClick])
 
     return (
-        <div className="fixed inset-0 bg-gray-900 flex flex-col z-50 overflow-hidden">
+        <div className={VIDEO_EDITOR_STYLES.MAIN_CONTAINER}>
             {/* Export Dialog */}
             <ExportDialog
                 isOpen={showExportDialog}
@@ -939,606 +423,76 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                 onExport={handleExport}
                 duration={duration}
             />
-            {/* Top Toolbar - Compact Screen Studio Style */}
-            <div className="bg-gray-800/95 backdrop-blur-sm border-b border-gray-700 px-3 py-2 shadow-lg">
-                <div className="flex items-center justify-between">
-                    {/* Left Section */}
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={onCancel}
-                            className="text-gray-400 hover:text-white h-7 px-2 transition-all duration-200 hover:bg-gray-700 hover:scale-105"
-                            title="Back to main view (Esc)"
-                        >
-                            <RotateCcw className="h-3 w-3 mr-1" />
-                            <span className="text-xs">Back</span>
-                        </Button>
-                        <div className="h-4 w-px bg-gray-600" />
-                        <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white h-7 px-2">
-                            <Settings className="h-3 w-3" />
-                        </Button>
-                    </div>
 
-                    {/* Center - Project Name */}
-                    <div className="flex items-center gap-1">
-                        <span className="text-white font-medium text-sm">Video Recording</span>
-                        <span className="text-gray-400 text-sm">.screenstudio</span>
-                        {/* Video Info Overlay - Top Left */}
-                        <div className="flex gap-2 z-20">
-                            <div className="bg-black/60 backdrop-blur-md text-white text-xs px-2.5 py-1.5 rounded-lg border border-white/10 shadow-lg">
-                                <Clock className="h-3 w-3 inline mr-1.5" />
-                                {formatTime(currentTime)} / {formatTime(duration)}
-                            </div>
-                            <div className="bg-black/60 backdrop-blur-md text-white text-xs px-2.5 py-1.5 rounded-lg border border-white/10 shadow-lg">
-                                {aspectRatio}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Right Section */}
-                    <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white h-7 w-7 p-0">
-                            <Undo2 className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white h-7 w-7 p-0">
-                            <Redo2 className="h-3 w-3" />
-                        </Button>
-                        <div className="h-4 w-px bg-gray-600" />
-                        <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white h-7 w-7 p-0">
-                            {isDarkMode ? <Sun className="h-3 w-3" /> : <Moon className="h-3 w-3" />}
-                        </Button>
-                        <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white h-7 px-2">
-                            <Zap className="h-3 w-3 mr-1" />
-                            <span className="text-xs">Presets</span>
-                        </Button>
-                        <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white h-7 w-7 p-0">
-                            <Grid3X3 className="h-3 w-3" />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-gray-400 hover:text-white h-7 px-2"
-                            onClick={() => {
-                                console.log('Debug: Force video ready')
-                                setForceReady(true)
-                                setIsVideoReady(true)
-                                setDuration(60)
-                                setTrimRange({ start: 0, end: 60 })
-                            }}
-                            title="Force video ready (debug)"
-                        >
-                            <span className="text-xs">Force Ready</span>
-                        </Button>
-                        <div className="h-4 w-px bg-gray-600" />
-                        <Button
-                            onClick={handleExportClick}
-                            disabled={isProcessing}
-                            className="bg-purple-600 hover:bg-purple-700 text-white h-7 px-3 transition-all duration-200 hover:scale-105 hover:shadow-lg disabled:opacity-50"
-                            title="Export video (Ctrl+E)"
-                        >
-                            {isProcessing ? (
-                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                            ) : (
-                                <Zap className="h-3 w-3 mr-1" />
-                            )}
-                            <span className="text-xs">Export</span>
-                        </Button>
-                    </div>
-                </div>
-            </div>
+            {/* Top Toolbar */}
+            <VideoEditorToolbar
+                currentTime={currentTime}
+                duration={duration}
+                aspectRatio={aspectRatio}
+                isDarkMode={isDarkMode}
+                isProcessing={isProcessing}
+                onCancel={onCancel}
+                onAspectRatioChange={setAspectRatio}
+                onExportClick={handleExportClick}
+                onForceReady={forceVideoReady}
+                formatTime={formatTime}
+            />
 
             {/* Main Content Area */}
-            /<div className="flex-1 flex min-h-0">
+            <div className="flex-1 flex min-h-0">
                 {/* Video Preview - Left Side */}
-                <div className="flex-1 bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 flex items-center justify-center min-h-0 p-6 relative overflow-hidden">
+                <div className={VIDEO_EDITOR_STYLES.VIDEO_PREVIEW}>
                     {/* Ambient Background Effect */}
-                    <div className="absolute inset-0 opacity-30">
-                        <div className="absolute top-0 left-0 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse"></div>
-                        <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+                    <div className={VIDEO_EDITOR_STYLES.AMBIENT_BACKGROUND}>
+                        <div className={VIDEO_EDITOR_STYLES.AMBIENT_CIRCLE_1}></div>
+                        <div className={VIDEO_EDITOR_STYLES.AMBIENT_CIRCLE_2} style={{ animationDelay: '1s' }}></div>
                     </div>
 
                     {/* Video Container with Enhanced Styling */}
                     <div
-                        className={`relative overflow-hidden border-2 transition-all duration-500 ease-out z-10 ${isDragging
-                            ? 'scale-[1.02] border-purple-500/50 shadow-2xl shadow-purple-500/20'
-                            : 'border-gray-700/50 shadow-xl hover:border-gray-600/50'
-                            }`}
-                        style={{
-                            aspectRatio: aspectRatio === '16:9' ? '16/9' :
-                                aspectRatio === '4:3' ? '4/3' :
-                                    aspectRatio === '1:1' ? '1/1' :
-                                        aspectRatio === '21:9' ? '21/9' :
-                                            aspectRatio === '9:16' ? '9/16' : '16/9',
-                            maxWidth: '95%',
-                            maxHeight: '95%',
-                            width: 'fit-content',
-                            height: 'fit-content',
-                            minWidth: '400px',
-                            minHeight: '250px',
-                            borderRadius: `${backgroundSettings.borderRadius}px`,
-                            ...getShadowStyle()
-                        }}
+                        className={`${VIDEO_EDITOR_STYLES.VIDEO_CONTAINER} border-gray-700/50 shadow-xl hover:border-gray-600/50`}
+                        style={videoContainerStyle}
                     >
                         {/* Background Layer with Blur */}
                         <div
                             className="absolute inset-0 transition-all duration-300"
-                            style={{
-                                ...getBackgroundStyle(),
-                                borderRadius: `${backgroundSettings.borderRadius}px`
-                            }}
+                            style={backgroundLayerStyle}
                         />
 
                         {/* Content Layer (Video) */}
-                        <div
-                            className="w-full h-full relative bg-orange-500"
-                            style={{
-                                padding: backgroundSettings.padding > 0 ? `${backgroundSettings.padding}%` : '0'
-                            }}
-
-                        >
-                            <div
-                                className="w-full h-full object-cover transition-all duration-300 hover:brightness-105 bg-green-500 p-2 overflow-hidden"
-                                style={{
-                                    aspectRatio: aspectRatio === '16:9' ? '16/9' :
-                                        aspectRatio === '4:3' ? '4/3' :
-                                            aspectRatio === '1:1' ? '1/1' :
-                                                aspectRatio === '21:9' ? '21/9' :
-                                                    aspectRatio === '9:16' ? '9/16' : '16/9',
-                                    borderRadius: `${backgroundSettings.borderRadius}px`
-                                }}
-                            >
-                                <video
-                                    ref={videoRef}
-                                    src={videoUrl}
-
-                                    onMouseEnter={() => setIsDragging(true)}
-                                    onMouseLeave={() => setIsDragging(false)}
-                                    onLoadStart={() => console.log('Video load started')}
-                                    onLoadedMetadata={() => {
-                                        console.log('Video metadata loaded')
-                                        if (videoRef.current && isFinite(videoRef.current.duration) && videoRef.current.duration > 0) {
-                                            setDuration(videoRef.current.duration)
-                                            setTrimRange({ start: 0, end: videoRef.current.duration })
-                                            setIsVideoReady(true)
-                                        }
-                                    }}
-                                    onCanPlay={() => {
-                                        console.log('Video can play')
-                                        setIsVideoReady(true)
-                                    }}
-                                    onError={(e) => {
-                                        console.error('Video error:', e)
-                                        setForceReady(true)
-                                        setIsVideoReady(true)
-                                    }}
-                                />
-
-                                {/* Enhanced Webcam Overlay */}
-                                {webcamVideoUrl && webcamSettings.visible && (
-                                    <div
-                                        className="absolute bg-black overflow-hidden transition-all duration-300 hover:scale-105 group"
-                                        style={{
-                                            left: `${webcamOverlayPosition.x}%`,
-                                            top: `${webcamOverlayPosition.y}%`,
-                                            width: webcamSettings.shape === 'square' ? `${Math.min(webcamOverlaySize.width, webcamOverlaySize.height)}px` : `${webcamOverlaySize.width}px`,
-                                            height: webcamSettings.shape === 'square' ? `${Math.min(webcamOverlaySize.width, webcamOverlaySize.height)}px` : `${webcamOverlaySize.height}px`,
-                                            cursor: 'move',
-                                            zIndex: 15,
-                                            borderRadius: webcamSettings.shape === 'circle' ? '50%' : '12px',
-                                            border: `${webcamSettings.borderWidth}px solid ${webcamSettings.borderColor}`,
-                                            boxShadow: webcamSettings.shadowIntensity > 0
-                                                ? `0 ${Math.round(webcamSettings.shadowIntensity * 0.3)}px ${Math.round(webcamSettings.shadowIntensity * 0.8)}px ${Math.round(webcamSettings.shadowIntensity * 0.2)}px rgba(0, 0, 0, ${Math.min(webcamSettings.shadowIntensity / 100 * 0.5, 0.5)})`
-                                                : '0 4px 12px rgba(0, 0, 0, 0.3)'
-                                        }}
-                                        onMouseDown={handleMouseDown}
-                                    >
-                                        <video
-                                            ref={webcamVideoRef}
-                                            src={webcamVideoUrl}
-                                            className="w-full h-full object-cover"
-                                            muted
-                                            onTimeUpdate={() => {
-                                                if (videoRef.current && webcamVideoRef.current) {
-                                                    const timeDiff = Math.abs(videoRef.current.currentTime - webcamVideoRef.current.currentTime)
-                                                    if (timeDiff > 0.1) {
-                                                        webcamVideoRef.current.currentTime = videoRef.current.currentTime
-                                                    }
-                                                }
-                                            }}
-                                        />
-                                        {/* Resize Handle */}
-                                        <div
-                                            className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize hover:scale-110 transition-all duration-200 opacity-0 group-hover:opacity-100"
-                                            style={{
-                                                backgroundColor: webcamSettings.borderColor,
-                                                borderRadius: webcamSettings.shape === 'circle' ? '50%' : '0 0 12px 0'
-                                            }}
-                                            onMouseDown={handleResizeMouseDown}
-                                        >
-                                            <div className="absolute inset-0 flex items-center justify-center">
-                                                <div className="w-2 h-2 border-r-2 border-b-2 border-white/80"></div>
-                                            </div>
-                                        </div>
-                                        {/* Label */}
-                                        <div className="absolute top-2 left-2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                            <span className="font-medium">Webcam</span>
-                                        </div>
-                                        {/* Corner Indicators */}
-                                        <div className="absolute top-1 left-1 w-3 h-3 border-t-2 border-l-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
-                                        <div className="absolute top-1 right-1 w-3 h-3 border-t-2 border-r-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
-                                        <div className="absolute bottom-1 left-1 w-3 h-3 border-b-2 border-l-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
-                                    </div>
-                                )}
-
-                            </div>
-
-
-
-
-                            {/* Playback Controls Overlay - Center (appears on hover) */}
-                            {/* <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300 z-20 pointer-events-none">
-                                <div className="bg-black/70 backdrop-blur-xl rounded-full p-4 shadow-2xl border border-white/20 pointer-events-auto">
-                                    <Button
-                                        variant="ghost"
-                                        size="lg"
-                                        onClick={togglePlayPause}
-                                        className="text-white hover:text-purple-400 hover:bg-white/10 rounded-full h-16 w-16 p-0 transition-all duration-200"
-                                    >
-                                        {isPlaying ? (
-                                            <Pause className="h-8 w-8" />
-                                        ) : (
-                                            <Play className="h-8 w-8 ml-1" />
-                                        )}
-                                    </Button>
-                                </div>
-                            </div> */}
-
-                            {/* Video Annotation Layer */}
-                            {videoRef.current && (
-                                <VideoAnnotation
-                                    videoRef={videoRef}
-                                    currentTime={currentTime}
-                                    annotations={annotations}
-                                    onAddAnnotation={addAnnotation}
-                                    onUpdateAnnotation={updateAnnotation}
-                                    onRemoveAnnotation={removeAnnotation}
-                                    selectedTool={selectedAnnotationTool}
-                                    toolColor={annotationColor}
-                                    strokeWidth={annotationStrokeWidth}
-                                    fontSize={annotationFontSize}
-                                    containerWidth={videoRef.current.videoWidth || 1920}
-                                    containerHeight={videoRef.current.videoHeight || 1080}
-                                />
-                            )}
-
-
-
-                        </div>
-
-                        {/* Loading State with Enhanced Animation */}
-                        {!isVideoReady && !forceReady && (
-                            <div
-                                className="absolute inset-0 bg-gradient-to-br from-gray-900/95 via-gray-800/95 to-gray-900/95 backdrop-blur-xl flex items-center justify-center z-30"
-                                style={{ borderRadius: `${backgroundSettings.borderRadius}px` }}
-                            >
-                                <div className="text-white text-center">
-                                    <div className="relative mb-6">
-                                        <div className="h-20 w-20 mx-auto">
-                                            <Loader2 className="h-20 w-20 animate-spin text-purple-400" />
-                                            <div className="absolute inset-0 h-20 w-20 border-4 border-purple-400/30 border-t-purple-400 rounded-full animate-spin"></div>
-                                        </div>
-                                        <div className="absolute inset-0 h-20 w-20 mx-auto border-4 border-blue-400/20 border-t-blue-400 rounded-full animate-spin" style={{ animationDuration: '1.5s', animationDirection: 'reverse' }}></div>
-                                    </div>
-                                    <p className="text-lg font-semibold mb-2 bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
-                                        Loading video...
-                                    </p>
-                                    <p className="text-sm text-gray-400 mb-6">Preparing your content for editing</p>
-                                    <div className="flex gap-3 justify-center">
-                                        <Button
-                                            onClick={() => {
-                                                console.log('Force ready clicked')
-                                                setForceReady(true)
-                                                setIsVideoReady(true)
-                                                setDuration(60)
-                                                setTrimRange({ start: 0, end: 60 })
-                                            }}
-                                            className="bg-purple-600 hover:bg-purple-700 text-white shadow-lg hover:shadow-purple-500/50 transition-all duration-200"
-                                            size="sm"
-                                        >
-                                            Skip Loading
-                                        </Button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* webcamb here  */}
-                        {/* Annotations Rendering */}
-                        {annotations.map(annotation => {
-                            const isVisible = currentTime >= annotation.startTime && currentTime <= annotation.endTime
-                            const isSelected = selectedAnnotation === annotation.id
-
-                            if (!isVisible) return null
-
-                            // Text annotation
-                            if (annotation.type === 'text') {
-                                return (
-                                    <div
-                                        key={annotation.id}
-                                        className={`absolute cursor-move transition-all duration-200 group ${isSelected ? 'ring-2 ring-purple-500 scale-105 z-30' : 'hover:scale-105 z-20'
-                                            }`}
-                                        style={{
-                                            left: `${annotation.x}%`,
-                                            top: `${annotation.y}%`,
-                                            width: annotation.width ? `${annotation.width}px` : 'auto',
-                                            minWidth: '100px'
-                                        }}
-                                        onMouseDown={(e) => handleAnnotationMouseDown(e, annotation.id)}
-                                    >
-                                        <div
-                                            className="px-3 py-2 rounded-lg backdrop-blur-sm border-2 shadow-lg"
-                                            style={{
-                                                color: annotation.color,
-                                                fontSize: `${annotation.fontSize || 24}px`,
-                                                fontWeight: annotation.fontWeight || 'bold',
-                                                backgroundColor: annotation.backgroundColor || 'rgba(0, 0, 0, 0.5)',
-                                                borderColor: isSelected ? annotation.color : 'transparent'
-                                            }}
-                                        >
-                                            {annotation.content}
-                                        </div>
-                                        {isSelected && (
-                                            <>
-                                                <div
-                                                    className="absolute bottom-0 right-0 w-4 h-4 bg-purple-500 rounded-full cursor-se-resize"
-                                                    onMouseDown={(e) => handleAnnotationResize(e, annotation.id)}
-                                                />
-                                                <Button
-                                                    size="sm"
-                                                    variant="destructive"
-                                                    className="absolute -top-2 -right-2 h-5 w-5 p-0 rounded-full text-xs"
-                                                    onClick={() => removeAnnotation(annotation.id)}
-                                                >
-                                                    ×
-                                                </Button>
-                                            </>
-                                        )}
-                                    </div>
-                                )
-                            }
-
-                            // Arrow annotation
-                            if (annotation.type === 'arrow') {
-                                return (
-                                    <svg
-                                        key={annotation.id}
-                                        className={`absolute pointer-events-none ${isSelected ? 'z-30' : 'z-20'}`}
-                                        style={{
-                                            left: `${annotation.x}%`,
-                                            top: `${annotation.y}%`,
-                                            width: '100px',
-                                            height: '100px'
-                                        }}
-                                    >
-                                        <defs>
-                                            <marker
-                                                id={`arrowhead-${annotation.id}`}
-                                                markerWidth="10"
-                                                markerHeight="10"
-                                                refX="9"
-                                                refY="3"
-                                                orient="auto"
-                                            >
-                                                <polygon
-                                                    points="0 0, 10 3, 0 6"
-                                                    fill={annotation.color}
-                                                />
-                                            </marker>
-                                        </defs>
-                                        <line
-                                            x1="10"
-                                            y1="10"
-                                            x2="90"
-                                            y2="90"
-                                            stroke={annotation.color}
-                                            strokeWidth={annotation.strokeWidth || 3}
-                                            markerEnd={`url(#arrowhead-${annotation.id})`}
-                                        />
-                                    </svg>
-                                )
-                            }
-
-                            // Rectangle annotation
-                            if (annotation.type === 'rectangle') {
-                                return (
-                                    <div
-                                        key={annotation.id}
-                                        className={`absolute cursor-move transition-all duration-200 group ${isSelected ? 'ring-2 ring-purple-500 scale-105 z-30' : 'hover:scale-105 z-20'
-                                            }`}
-                                        style={{
-                                            left: `${annotation.x}%`,
-                                            top: `${annotation.y}%`,
-                                            width: `${annotation.width || 200}px`,
-                                            height: `${annotation.height || 100}px`,
-                                            border: `${annotation.strokeWidth || 3}px solid ${annotation.color}`,
-                                            borderRadius: '8px',
-                                            backgroundColor: 'transparent'
-                                        }}
-                                        onMouseDown={(e) => handleAnnotationMouseDown(e, annotation.id)}
-                                    >
-                                        {isSelected && (
-                                            <>
-                                                <div
-                                                    className="absolute bottom-0 right-0 w-4 h-4 bg-purple-500 rounded-full cursor-se-resize"
-                                                    onMouseDown={(e) => handleAnnotationResize(e, annotation.id)}
-                                                />
-                                                <Button
-                                                    size="sm"
-                                                    variant="destructive"
-                                                    className="absolute -top-2 -right-2 h-5 w-5 p-0 rounded-full text-xs"
-                                                    onClick={() => removeAnnotation(annotation.id)}
-                                                >
-                                                    ×
-                                                </Button>
-                                            </>
-                                        )}
-                                    </div>
-                                )
-                            }
-
-                            // Circle annotation
-                            if (annotation.type === 'circle') {
-                                const size = Math.min(annotation.width || 150, annotation.height || 150)
-                                return (
-                                    <div
-                                        key={annotation.id}
-                                        className={`absolute cursor-move transition-all duration-200 group ${isSelected ? 'ring-2 ring-purple-500 scale-105 z-30' : 'hover:scale-105 z-20'
-                                            }`}
-                                        style={{
-                                            left: `${annotation.x}%`,
-                                            top: `${annotation.y}%`,
-                                            width: `${size}px`,
-                                            height: `${size}px`,
-                                            border: `${annotation.strokeWidth || 3}px solid ${annotation.color}`,
-                                            borderRadius: '50%',
-                                            backgroundColor: 'transparent'
-                                        }}
-                                        onMouseDown={(e) => handleAnnotationMouseDown(e, annotation.id)}
-                                    >
-                                        {isSelected && (
-                                            <>
-                                                <div
-                                                    className="absolute bottom-0 right-0 w-4 h-4 bg-purple-500 rounded-full cursor-se-resize"
-                                                    onMouseDown={(e) => handleAnnotationResize(e, annotation.id)}
-                                                />
-                                                <Button
-                                                    size="sm"
-                                                    variant="destructive"
-                                                    className="absolute -top-2 -right-2 h-5 w-5 p-0 rounded-full text-xs"
-                                                    onClick={() => removeAnnotation(annotation.id)}
-                                                >
-                                                    ×
-                                                </Button>
-                                            </>
-                                        )}
-                                    </div>
-                                )
-                            }
-
-                            // Line annotation
-                            if (annotation.type === 'line') {
-                                return (
-                                    <svg
-                                        key={annotation.id}
-                                        className={`absolute pointer-events-none ${isSelected ? 'z-30' : 'z-20'}`}
-                                        style={{
-                                            left: `${annotation.x}%`,
-                                            top: `${annotation.y}%`,
-                                            width: '150px',
-                                            height: '5px'
-                                        }}
-                                    >
-                                        <line
-                                            x1="0"
-                                            y1="2"
-                                            x2="150"
-                                            y2="2"
-                                            stroke={annotation.color}
-                                            strokeWidth={annotation.strokeWidth || 3}
-                                        />
-                                    </svg>
-                                )
-                            }
-
-                            // Highlight annotation
-                            if (annotation.type === 'highlight') {
-                                return (
-                                    <div
-                                        key={annotation.id}
-                                        className={`absolute cursor-move transition-all duration-200 group ${isSelected ? 'ring-2 ring-purple-500 scale-105 z-30' : 'hover:scale-105 z-20'
-                                            }`}
-                                        style={{
-                                            left: `${annotation.x}%`,
-                                            top: `${annotation.y}%`,
-                                            width: `${annotation.width || 200}px`,
-                                            height: `${annotation.height || 100}px`,
-                                            backgroundColor: annotation.backgroundColor || `${annotation.color}40`,
-                                            borderRadius: '8px',
-                                            border: `2px solid ${annotation.color}`
-                                        }}
-                                        onMouseDown={(e) => handleAnnotationMouseDown(e, annotation.id)}
-                                    >
-                                        {isSelected && (
-                                            <>
-                                                <div
-                                                    className="absolute bottom-0 right-0 w-4 h-4 bg-purple-500 rounded-full cursor-se-resize"
-                                                    onMouseDown={(e) => handleAnnotationResize(e, annotation.id)}
-                                                />
-                                                <Button
-                                                    size="sm"
-                                                    variant="destructive"
-                                                    className="absolute -top-2 -right-2 h-5 w-5 p-0 rounded-full text-xs"
-                                                    onClick={() => removeAnnotation(annotation.id)}
-                                                >
-                                                    ×
-                                                </Button>
-                                            </>
-                                        )}
-                                    </div>
-                                )
-                            }
-
-                            return null
-                        })}
-
-                        {/* Enhanced Overlays */}
-                        {overlays.map(overlay => (
-                            <div
-                                key={overlay.id}
-                                className={`absolute border-2 rounded-xl p-3 transition-all duration-300 group cursor-move backdrop-blur-sm ${currentTime >= overlay.startTime && currentTime <= overlay.endTime
-                                    ? 'opacity-100 border-blue-400 bg-blue-400/20 shadow-lg shadow-blue-500/30'
-                                    : 'opacity-40 border-gray-500 bg-gray-500/10'
-                                    } ${hoveredOverlay === overlay.id
-                                        ? 'scale-110 shadow-2xl border-blue-300 ring-2 ring-blue-400/50 z-20'
-                                        : 'hover:scale-105 hover:shadow-xl'
-                                    }`}
-                                style={{
-                                    left: `${overlay.x}px`,
-                                    top: `${overlay.y}px`,
-                                    width: `${overlay.width}px`,
-                                    height: `${overlay.height}px`,
-                                    zIndex: hoveredOverlay === overlay.id ? 20 : 15
-                                }}
-                                onMouseEnter={() => setHoveredOverlay(overlay.id)}
-                                onMouseLeave={() => setHoveredOverlay(null)}
-                            >
-                                {overlay.type === 'text' ? (
-                                    <span className="text-white font-semibold text-sm drop-shadow-lg">{overlay.content}</span>
-                                ) : (
-                                    <img src={overlay.content} alt="Overlay" className="w-full h-full object-cover rounded-lg" />
-                                )}
-                                {/* Delete Button */}
-                                <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    className="absolute -top-3 -right-3 h-6 w-6 p-0 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 hover:scale-125 shadow-lg"
-                                    onClick={() => removeOverlay(overlay.id)}
-                                >
-                                    ×
-                                </Button>
-                                {/* Corner Handles */}
-                                <div className="absolute top-0 left-0 w-2 h-2 bg-blue-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 -translate-x-1/2 -translate-y-1/2"></div>
-                                <div className="absolute top-0 right-0 w-2 h-2 bg-blue-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 translate-x-1/2 -translate-y-1/2"></div>
-                                <div className="absolute bottom-0 left-0 w-2 h-2 bg-blue-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 -translate-x-1/2 translate-y-1/2"></div>
-                                <div className="absolute bottom-0 right-0 w-2 h-2 bg-blue-400 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 translate-x-1/2 translate-y-1/2"></div>
-                            </div>
-                        ))}
+                        <VideoContainer
+                            videoUrl={videoUrl}
+                            webcamVideoUrl={webcamVideoUrl}
+                            webcamOverlayPosition={webcamOverlayPosition}
+                            webcamOverlaySize={webcamOverlaySize}
+                            webcamSettings={webcamSettings}
+                            isVideoReady={isVideoReady}
+                            forceReady={forceReady}
+                            currentTime={currentTime}
+                            aspectRatio={aspectRatio}
+                            backgroundSettings={backgroundSettings}
+                            annotations={annotations}
+                            selectedAnnotation={selectedAnnotation}
+                            selectedAnnotationTool={selectedAnnotationTool}
+                            annotationColor={annotationColor}
+                            annotationStrokeWidth={annotationStrokeWidth}
+                            annotationFontSize={annotationFontSize}
+                            onForceReady={forceVideoReady}
+                            onWebcamMouseDown={handleWebcamMouseDown}
+                            onWebcamResizeMouseDown={handleWebcamResizeMouseDown}
+                            onAddAnnotation={handleAddAnnotation}
+                            onUpdateAnnotation={handleUpdateAnnotation}
+                            onRemoveAnnotation={handleRemoveAnnotation}
+                            onAnnotationMouseDown={handleAnnotationMouseDownWrapper}
+                            onAnnotationResize={handleAnnotationResizeWrapper}
+                            videoRef={videoRef}
+                            webcamVideoRef={webcamVideoRef}
+                        />
                     </div>
                 </div>
 
                 {/* Right Sidebar */}
-                <div className="w-64 bg-gray-800 border-l border-gray-700 flex min-h-0">
+                <div className={VIDEO_EDITOR_STYLES.SIDEBAR}>
                     <RightSidebar
                         overlays={overlays}
                         onAddOverlay={addOverlay}
@@ -1549,8 +503,8 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                         backgroundSettings={backgroundSettings}
                         onBackgroundChange={setBackgroundSettings}
                         clips={clips}
-                        onAddClip={handleAddClip}
-                        onUpdateClip={handleUpdateClip}
+                        onAddClip={addClip}
+                        onUpdateClip={updateClip}
                         webcamOverlayPosition={webcamOverlayPosition}
                         setWebcamOverlayPosition={setWebcamOverlayPosition}
                         webcamOverlaySize={webcamOverlaySize}
@@ -1558,9 +512,9 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                         webcamSettings={webcamSettings}
                         onWebcamSettingsChange={setWebcamSettings}
                         annotations={annotations}
-                        onAddAnnotation={addAnnotation}
-                        onUpdateAnnotation={updateAnnotation}
-                        onRemoveAnnotation={removeAnnotation}
+                        onAddAnnotation={handleAddAnnotation}
+                        onUpdateAnnotation={handleUpdateAnnotation}
+                        onRemoveAnnotation={handleRemoveAnnotation}
                         selectedAnnotationTool={selectedAnnotationTool}
                         onAnnotationToolChange={setSelectedAnnotationTool}
                         annotationColor={annotationColor}
@@ -1569,10 +523,10 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                         onAnnotationStrokeWidthChange={setAnnotationStrokeWidth}
                         annotationFontSize={annotationFontSize}
                         onAnnotationFontSizeChange={setAnnotationFontSize}
-                        onApplyColorGrading={handleApplyColorGrading}
-                        onApplyAspectRatio={handleApplyAspectRatio}
-                        onApplyBrandKit={handleApplyBrandKit}
-                        onApplyTransition={handleApplyTransition}
+                        onApplyColorGrading={templateHandlers.onApplyColorGrading}
+                        onApplyAspectRatio={templateHandlers.onApplyAspectRatio}
+                        onApplyBrandKit={templateHandlers.onApplyBrandKit}
+                        onApplyTransition={templateHandlers.onApplyTransition}
                         currentColorPreset={currentColorPreset}
                         currentAspectRatio={currentAspectRatio}
                         currentBrandKit={currentBrandKit}
@@ -1580,35 +534,32 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                         onEnhancementConfigChange={handleEnhancementConfigChange}
                         enhancementSettings={enhancementSettings}
                         onEnhancementSettingsChange={handleEnhancementSettingsChange}
-                        onRemoveClip={handleDeleteClip}
+                        onRemoveClip={deleteClip}
                     />
                 </div>
             </div>
 
             {/* Bottom Timeline */}
-            <div className="flex-shrink-0" style={{ height: "220px" }}>
+            <div className={VIDEO_EDITOR_STYLES.TIMELINE} style={{ height: `${VIDEO_EDITOR_CONSTANTS.TIMELINE_HEIGHT}px` }}>
                 <MultiTrackTimeline
                     isPlaying={isPlaying}
                     currentTime={currentTime}
                     duration={duration}
                     onPlayPause={togglePlayPause}
                     onSeek={seekTo}
-                    onRewind={handleRewind}
-                    onFastForward={handleFastForward}
+                    onRewind={rewind}
+                    onFastForward={fastForward}
                     isVideoReady={isVideoReady}
                     aspectRatio={aspectRatio}
                     onCrop={handleCrop}
                     onAspectRatioChange={setAspectRatio}
                     clips={clips}
-                    onUpdateClip={handleUpdateClip}
-                    onDeleteClip={handleDeleteClip}
-                    onDuplicateClip={handleDuplicateClip}
-                    onAddClip={handleAddClip}
+                    onUpdateClip={updateClip}
+                    onDeleteClip={deleteClip}
+                    onDuplicateClip={duplicateClip}
+                    onAddClip={addClip}
                 />
             </div>
-
-            {/* Hidden canvas for video processing */}
-            <canvas ref={canvasRef} className="hidden" />
         </div>
     )
 }

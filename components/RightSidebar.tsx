@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, memo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Input } from '@/components/ui/input'
@@ -37,6 +37,7 @@ import { BrandKit } from '@/lib/templates/brandKit'
 import { TransitionPreset } from '@/lib/templates/transitionPresets'
 import type { EnhancementConfig, EnhancementSettings, EnhancementMetrics } from '@/lib/videoEnhancement'
 import { getDefaultPreset } from '@/lib/videoEnhancement'
+import { Clip } from '@/hooks/useClips'
 
 interface PexelsPhoto {
     id: number
@@ -52,21 +53,6 @@ interface PexelsPhoto {
     }
     photographer: string
     photographer_url: string
-}
-
-interface Clip {
-    id: string
-    type: 'video' | 'audio' | 'effect'
-    name: string
-    duration: number
-    startTime: number
-    endTime: number
-    trackId: string
-    thumbnail?: string
-    waveform?: number[]
-    color: string
-    muted?: boolean
-    locked?: boolean
 }
 
 interface Annotation {
@@ -157,7 +143,7 @@ interface RightSidebarProps {
     onEnhancementSettingsChange?: (settings: EnhancementSettings) => void
 }
 
-export default function RightSidebar({
+const RightSidebar = memo(function RightSidebar({
     overlays,
     onAddOverlay,
     onRemoveOverlay,
@@ -1794,4 +1780,6 @@ export default function RightSidebar({
             </div>
         </div>
     )
-}
+})
+
+export default RightSidebar

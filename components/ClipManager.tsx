@@ -18,21 +18,7 @@ import {
     Lock,
     Unlock
 } from 'lucide-react'
-
-interface Clip {
-    id: string
-    type: 'video' | 'audio' | 'effect'
-    name: string
-    duration: number
-    startTime: number
-    endTime: number
-    trackId: string
-    thumbnail?: string
-    waveform?: number[]
-    color: string
-    muted?: boolean
-    locked?: boolean
-}
+import { Clip } from '@/hooks/useClips'
 
 interface ClipManagerProps {
     onAddClip: (clip: Clip) => void
@@ -71,7 +57,6 @@ export default function ClipManager({
                 type: file.type.startsWith('video/') ? 'video' :
                     file.type.startsWith('audio/') ? 'audio' : 'effect',
                 name: file.name,
-                duration: duration,
                 startTime: 0,
                 endTime: duration,
                 trackId: file.type.startsWith('video/') ? 'video-1' : 'audio-1',
@@ -274,7 +259,7 @@ export default function ClipManager({
                                             {clip.name}
                                         </h4>
                                         <span className="text-xs text-gray-400">
-                                            {clip.duration.toFixed(1)}s
+                                            {(clip.endTime - clip.startTime).toFixed(1)}s
                                         </span>
                                     </div>
 
