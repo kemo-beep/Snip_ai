@@ -25,6 +25,11 @@ import RightSidebar from './RightSidebar'
 import ExportDialog, { ExportOptions } from './ExportDialog'
 import VideoAnnotation, { Annotation } from './VideoAnnotation'
 import { exportVideo as processVideoExport, downloadBlob } from '@/lib/videoExporter'
+import { ColorGradingPreset, applyPresetToCanvas } from '@/lib/templates/colorGradingPresets'
+import { AspectRatioTemplate } from '@/lib/templates/aspectRatioTemplates'
+import { BrandKit } from '@/lib/templates/brandKit'
+import { TransitionPreset } from '@/lib/templates/transitionPresets'
+import { EnhancementConfig, EnhancementSettings, getDefaultPreset } from '@/lib/videoEnhancement'
 
 interface VideoEditorProps {
     videoUrl: string
@@ -101,6 +106,20 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
         gradientColors: ['#ff6b6b', '#4ecdc4']
     })
     const [showExportDialog, setShowExportDialog] = useState(false)
+    const [currentColorPreset, setCurrentColorPreset] = useState<string | undefined>()
+    const [currentAspectRatio, setCurrentAspectRatio] = useState<string | undefined>('youtube-standard')
+    const [currentBrandKit, setCurrentBrandKit] = useState<string | undefined>()
+    const [colorGradingFilters, setColorGradingFilters] = useState<any>(null)
+
+    // Enhancement state
+    const [enhancementConfig, setEnhancementConfig] = useState<EnhancementConfig>(() => {
+        const defaultPreset = getDefaultPreset()
+        return defaultPreset.config
+    })
+    const [enhancementSettings, setEnhancementSettings] = useState<EnhancementSettings>(() => {
+        const defaultPreset = getDefaultPreset()
+        return defaultPreset.settings
+    })
 
     const handleAddClip = (clip: any) => {
         setClips(prev => [...prev, clip])
@@ -130,6 +149,27 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
         }
     }
 
+    // Enhancement configuration handlers
+    const handleEnhancementConfigChange = (config: EnhancementConfig) => {
+        setEnhancementConfig(config)
+        // Persist to localStorage
+        try {
+            localStorage.setItem('videoEditor_enhancementConfig', JSON.stringify(config))
+        } catch (error) {
+            console.warn('Failed to save enhancement config to localStorage:', error)
+        }
+    }
+
+    const handleEnhancementSettingsChange = (settings: EnhancementSettings) => {
+        setEnhancementSettings(settings)
+        // Persist to localStorage
+        try {
+            localStorage.setItem('videoEditor_enhancementSettings', JSON.stringify(settings))
+        } catch (error) {
+            console.warn('Failed to save enhancement settings to localStorage:', error)
+        }
+    }
+
 
     // Simple approach: Force video ready after a very short delay
     const [webcamVideoUrl, setWebcamVideoUrl] = useState<string | null>(webcamUrl || null)
@@ -150,6 +190,25 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
             setWebcamVideoUrl(webcamUrl)
         }
     }, [webcamUrl])
+
+    // Load enhancement configuration from localStorage on mount
+    useEffect(() => {
+        try {
+            const savedConfig = localStorage.getItem('videoEditor_enhancementConfig')
+            if (savedConfig) {
+                const config = JSON.parse(savedConfig)
+                setEnhancementConfig(config)
+            }
+
+            const savedSettings = localStorage.getItem('videoEditor_enhancementSettings')
+            if (savedSettings) {
+                const settings = JSON.parse(savedSettings)
+                setEnhancementSettings(settings)
+            }
+        } catch (error) {
+            console.warn('Failed to load enhancement configuration from localStorage:', error)
+        }
+    }, [])
 
 
     useEffect(() => {
@@ -626,6 +685,8 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                     wallpaperUrl: backgroundSettings.wallpaperUrl,
                     blurAmount: backgroundSettings.blurAmount
                 },
+                enhancementConfig,
+                enhancementSettings,
                 onProgress: (progress) => {
                     console.log('Export progress:', Math.round(progress * 100) + '%')
                     onProgressUpdate(progress)
@@ -727,6 +788,48 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
     const handleCrop = () => {
         // Placeholder for crop functionality
         console.log('Crop functionality coming soon')
+    }
+
+    // Template handlers
+    const handleApplyColorGrading = (preset: ColorGradingPreset) => {
+        console.log('Applying color grading preset:', preset.name)
+        setCurrentColorPreset(preset.id)
+        setColorGradingFilters(preset.filters)
+        // The filters will be applied during video rendering/export
+    }
+
+    const handleApplyAspectRatio = (template: AspectRatioTemplate) => {
+        console.log('Applying aspect ratio template:', template.name, template.ratio)
+        setCurrentAspectRatio(template.id)
+        setAspectRatio(template.ratio)
+        // Update canvas dimensions based on template
+        const canvas = canvasRef.current
+        if (canvas) {
+            canvas.width = template.width
+            canvas.height = template.height
+        }
+    }
+
+    const handleApplyBrandKit = (brandKit: BrandKit) => {
+        console.log('Applying brand kit:', brandKit.name)
+        setCurrentBrandKit(brandKit.id)
+        // Apply brand colors to background
+        const primaryColor = brandKit.colors.find(c => c.usage === 'primary')
+        const secondaryColor = brandKit.colors.find(c => c.usage === 'secondary')
+        if (primaryColor && secondaryColor) {
+            setBackgroundSettings(prev => ({
+                ...prev,
+                type: 'gradient',
+                gradientColors: [primaryColor.hex, secondaryColor.hex]
+            }))
+        }
+    }
+
+    const handleApplyTransition = (transition: TransitionPreset) => {
+        console.log('Applying transition:', transition.name)
+        // Add transition to timeline between clips
+        // This would be implemented with the timeline system
+        alert(`Transition "${transition.name}" will be applied between clips. Full implementation coming soon!`)
     }
 
     const getBackgroundStyle = () => {
@@ -972,7 +1075,7 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                             style={{
                                 padding: backgroundSettings.padding > 0 ? `${backgroundSettings.padding}%` : '0'
                             }}
-                            
+
                         >
                             <div
                                 className="w-full h-full object-cover transition-all duration-300 hover:brightness-105 bg-green-500 p-2 overflow-hidden"
@@ -988,7 +1091,7 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                                 <video
                                     ref={videoRef}
                                     src={videoUrl}
-                                    
+
                                     onMouseEnter={() => setIsDragging(true)}
                                     onMouseLeave={() => setIsDragging(false)}
                                     onLoadStart={() => console.log('Video load started')}
@@ -1011,67 +1114,67 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                                     }}
                                 />
 
-                                 {/* Enhanced Webcam Overlay */}
-                            {webcamVideoUrl && webcamSettings.visible && (
-                                <div
-                                    className="absolute bg-black overflow-hidden transition-all duration-300 hover:scale-105 group"
-                                    style={{
-                                        left: `${webcamOverlayPosition.x}%`,
-                                        top: `${webcamOverlayPosition.y}%`,
-                                        width: webcamSettings.shape === 'square' ? `${Math.min(webcamOverlaySize.width, webcamOverlaySize.height)}px` : `${webcamOverlaySize.width}px`,
-                                        height: webcamSettings.shape === 'square' ? `${Math.min(webcamOverlaySize.width, webcamOverlaySize.height)}px` : `${webcamOverlaySize.height}px`,
-                                        cursor: 'move',
-                                        zIndex: 15,
-                                        borderRadius: webcamSettings.shape === 'circle' ? '50%' : '12px',
-                                        border: `${webcamSettings.borderWidth}px solid ${webcamSettings.borderColor}`,
-                                        boxShadow: webcamSettings.shadowIntensity > 0
-                                            ? `0 ${Math.round(webcamSettings.shadowIntensity * 0.3)}px ${Math.round(webcamSettings.shadowIntensity * 0.8)}px ${Math.round(webcamSettings.shadowIntensity * 0.2)}px rgba(0, 0, 0, ${Math.min(webcamSettings.shadowIntensity / 100 * 0.5, 0.5)})`
-                                            : '0 4px 12px rgba(0, 0, 0, 0.3)'
-                                    }}
-                                    onMouseDown={handleMouseDown}
-                                >
-                                    <video
-                                        ref={webcamVideoRef}
-                                        src={webcamVideoUrl}
-                                        className="w-full h-full object-cover"
-                                        muted
-                                        onTimeUpdate={() => {
-                                            if (videoRef.current && webcamVideoRef.current) {
-                                                const timeDiff = Math.abs(videoRef.current.currentTime - webcamVideoRef.current.currentTime)
-                                                if (timeDiff > 0.1) {
-                                                    webcamVideoRef.current.currentTime = videoRef.current.currentTime
-                                                }
-                                            }
-                                        }}
-                                    />
-                                    {/* Resize Handle */}
+                                {/* Enhanced Webcam Overlay */}
+                                {webcamVideoUrl && webcamSettings.visible && (
                                     <div
-                                        className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize hover:scale-110 transition-all duration-200 opacity-0 group-hover:opacity-100"
+                                        className="absolute bg-black overflow-hidden transition-all duration-300 hover:scale-105 group"
                                         style={{
-                                            backgroundColor: webcamSettings.borderColor,
-                                            borderRadius: webcamSettings.shape === 'circle' ? '50%' : '0 0 12px 0'
+                                            left: `${webcamOverlayPosition.x}%`,
+                                            top: `${webcamOverlayPosition.y}%`,
+                                            width: webcamSettings.shape === 'square' ? `${Math.min(webcamOverlaySize.width, webcamOverlaySize.height)}px` : `${webcamOverlaySize.width}px`,
+                                            height: webcamSettings.shape === 'square' ? `${Math.min(webcamOverlaySize.width, webcamOverlaySize.height)}px` : `${webcamOverlaySize.height}px`,
+                                            cursor: 'move',
+                                            zIndex: 15,
+                                            borderRadius: webcamSettings.shape === 'circle' ? '50%' : '12px',
+                                            border: `${webcamSettings.borderWidth}px solid ${webcamSettings.borderColor}`,
+                                            boxShadow: webcamSettings.shadowIntensity > 0
+                                                ? `0 ${Math.round(webcamSettings.shadowIntensity * 0.3)}px ${Math.round(webcamSettings.shadowIntensity * 0.8)}px ${Math.round(webcamSettings.shadowIntensity * 0.2)}px rgba(0, 0, 0, ${Math.min(webcamSettings.shadowIntensity / 100 * 0.5, 0.5)})`
+                                                : '0 4px 12px rgba(0, 0, 0, 0.3)'
                                         }}
-                                        onMouseDown={handleResizeMouseDown}
+                                        onMouseDown={handleMouseDown}
                                     >
-                                        <div className="absolute inset-0 flex items-center justify-center">
-                                            <div className="w-2 h-2 border-r-2 border-b-2 border-white/80"></div>
+                                        <video
+                                            ref={webcamVideoRef}
+                                            src={webcamVideoUrl}
+                                            className="w-full h-full object-cover"
+                                            muted
+                                            onTimeUpdate={() => {
+                                                if (videoRef.current && webcamVideoRef.current) {
+                                                    const timeDiff = Math.abs(videoRef.current.currentTime - webcamVideoRef.current.currentTime)
+                                                    if (timeDiff > 0.1) {
+                                                        webcamVideoRef.current.currentTime = videoRef.current.currentTime
+                                                    }
+                                                }
+                                            }}
+                                        />
+                                        {/* Resize Handle */}
+                                        <div
+                                            className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize hover:scale-110 transition-all duration-200 opacity-0 group-hover:opacity-100"
+                                            style={{
+                                                backgroundColor: webcamSettings.borderColor,
+                                                borderRadius: webcamSettings.shape === 'circle' ? '50%' : '0 0 12px 0'
+                                            }}
+                                            onMouseDown={handleResizeMouseDown}
+                                        >
+                                            <div className="absolute inset-0 flex items-center justify-center">
+                                                <div className="w-2 h-2 border-r-2 border-b-2 border-white/80"></div>
+                                            </div>
                                         </div>
+                                        {/* Label */}
+                                        <div className="absolute top-2 left-2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                            <span className="font-medium">Webcam</span>
+                                        </div>
+                                        {/* Corner Indicators */}
+                                        <div className="absolute top-1 left-1 w-3 h-3 border-t-2 border-l-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
+                                        <div className="absolute top-1 right-1 w-3 h-3 border-t-2 border-r-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
+                                        <div className="absolute bottom-1 left-1 w-3 h-3 border-b-2 border-l-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
                                     </div>
-                                    {/* Label */}
-                                    <div className="absolute top-2 left-2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-md border border-white/20 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                                        <span className="font-medium">Webcam</span>
-                                    </div>
-                                    {/* Corner Indicators */}
-                                    <div className="absolute top-1 left-1 w-3 h-3 border-t-2 border-l-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
-                                    <div className="absolute top-1 right-1 w-3 h-3 border-t-2 border-r-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
-                                    <div className="absolute bottom-1 left-1 w-3 h-3 border-b-2 border-l-2 opacity-0 group-hover:opacity-60 transition-opacity duration-200" style={{ borderColor: webcamSettings.borderColor }}></div>
-                                </div>
-                            )}
+                                )}
 
                             </div>
-                            
 
-                            
+
+
 
                             {/* Playback Controls Overlay - Center (appears on hover) */}
                             {/* <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity duration-300 z-20 pointer-events-none">
@@ -1109,7 +1212,7 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                                 />
                             )}
 
-                           
+
 
                         </div>
 
@@ -1466,6 +1569,18 @@ export default function VideoEditor({ videoUrl, webcamUrl, onSave, onCancel }: V
                         onAnnotationStrokeWidthChange={setAnnotationStrokeWidth}
                         annotationFontSize={annotationFontSize}
                         onAnnotationFontSizeChange={setAnnotationFontSize}
+                        onApplyColorGrading={handleApplyColorGrading}
+                        onApplyAspectRatio={handleApplyAspectRatio}
+                        onApplyBrandKit={handleApplyBrandKit}
+                        onApplyTransition={handleApplyTransition}
+                        currentColorPreset={currentColorPreset}
+                        currentAspectRatio={currentAspectRatio}
+                        currentBrandKit={currentBrandKit}
+                        enhancementConfig={enhancementConfig}
+                        onEnhancementConfigChange={handleEnhancementConfigChange}
+                        enhancementSettings={enhancementSettings}
+                        onEnhancementSettingsChange={handleEnhancementSettingsChange}
+                        onRemoveClip={handleDeleteClip}
                     />
                 </div>
             </div>

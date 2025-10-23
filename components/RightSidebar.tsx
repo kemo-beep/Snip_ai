@@ -21,9 +21,22 @@ import {
     FolderOpen,
     Loader2,
     Webcam,
-    Layout
+    Layout,
+    Sparkles,
+    Zap
 } from 'lucide-react'
 import ClipManager from './ClipManager'
+import TemplatesPanel from './TemplatesPanel'
+import EnhancementPanel from './EnhancementPanel'
+import EnhancementPreview from './EnhancementPreview'
+import EnhancementProgress from './EnhancementProgress'
+import EnhancementErrorDisplay from './EnhancementErrorDisplay'
+import { ColorGradingPreset } from '@/lib/templates/colorGradingPresets'
+import { AspectRatioTemplate } from '@/lib/templates/aspectRatioTemplates'
+import { BrandKit } from '@/lib/templates/brandKit'
+import { TransitionPreset } from '@/lib/templates/transitionPresets'
+import type { EnhancementConfig, EnhancementSettings, EnhancementMetrics } from '@/lib/videoEnhancement'
+import { getDefaultPreset } from '@/lib/videoEnhancement'
 
 interface PexelsPhoto {
     id: number
@@ -106,6 +119,7 @@ interface RightSidebarProps {
     clips: Clip[]
     onAddClip: (clip: Clip) => void
     onUpdateClip: (clipId: string, updates: Partial<Clip>) => void
+    onRemoveClip: (clipId: string) => void
     webcamOverlayPosition: { x: number, y: number }
     setWebcamOverlayPosition: (position: { x: number, y: number }) => void
     webcamOverlaySize: { width: number, height: number }
@@ -130,6 +144,17 @@ interface RightSidebarProps {
     onAnnotationStrokeWidthChange?: (width: number) => void
     annotationFontSize?: number
     onAnnotationFontSizeChange?: (size: number) => void
+    onApplyColorGrading?: (preset: ColorGradingPreset) => void
+    onApplyAspectRatio?: (template: AspectRatioTemplate) => void
+    onApplyBrandKit?: (brandKit: BrandKit) => void
+    onApplyTransition?: (transition: TransitionPreset) => void
+    currentColorPreset?: string
+    currentAspectRatio?: string
+    currentBrandKit?: string
+    enhancementConfig?: EnhancementConfig
+    onEnhancementConfigChange?: (config: EnhancementConfig) => void
+    enhancementSettings?: EnhancementSettings
+    onEnhancementSettingsChange?: (settings: EnhancementSettings) => void
 }
 
 export default function RightSidebar({
@@ -144,6 +169,7 @@ export default function RightSidebar({
     clips,
     onAddClip,
     onUpdateClip,
+    onRemoveClip,
     webcamOverlayPosition,
     setWebcamOverlayPosition,
     webcamOverlaySize,
@@ -161,7 +187,18 @@ export default function RightSidebar({
     annotationStrokeWidth = 3,
     onAnnotationStrokeWidthChange = () => { },
     annotationFontSize = 24,
-    onAnnotationFontSizeChange = () => { }
+    onAnnotationFontSizeChange = () => { },
+    onApplyColorGrading = () => { },
+    onApplyAspectRatio = () => { },
+    onApplyBrandKit = () => { },
+    onApplyTransition = () => { },
+    currentColorPreset,
+    currentAspectRatio,
+    currentBrandKit,
+    enhancementConfig,
+    onEnhancementConfigChange,
+    enhancementSettings,
+    onEnhancementSettingsChange
 }: RightSidebarProps) {
     const [activeTab, setActiveTab] = useState('background')
     const [showAddOverlay, setShowAddOverlay] = useState(false)
@@ -179,6 +216,16 @@ export default function RightSidebar({
         startTime: 0,
         endTime: 5
     })
+
+    // Enhancement processing state (config and settings are now props)
+    const [isEnhancementProcessing, setIsEnhancementProcessing] = useState(false)
+    const [enhancementProgress, setEnhancementProgress] = useState(0)
+    const [enhancementError, setEnhancementError] = useState<string | null>(null)
+    const [originalPreviewImage, setOriginalPreviewImage] = useState<ImageData | null>(null)
+    const [enhancedPreviewImage, setEnhancedPreviewImage] = useState<ImageData | null>(null)
+    const [enhancementMetrics, setEnhancementMetrics] = useState<EnhancementMetrics | null>(null)
+    const [enhancementErrorObj, setEnhancementErrorObj] = useState<any>(null)
+    const [isRecovering, setIsRecovering] = useState(false)
 
 
 
@@ -239,6 +286,8 @@ export default function RightSidebar({
     ]
 
     const tabs = [
+        { id: 'templates', icon: Sparkles, label: 'Templates' },
+        { id: 'enhancements', icon: Zap, label: 'Enhancements' },
         { id: 'media', icon: FolderOpen, label: 'Media' },
         { id: 'background', icon: Square, label: 'Background' },
         { id: 'layout', icon: Layout, label: 'Layout' },
@@ -270,6 +319,110 @@ export default function RightSidebar({
             })
             setShowAddOverlay(false)
         }
+    }
+
+    // Enhancement handlers
+    const handleEnhancementConfigChange = (config: EnhancementConfig) => {
+        onEnhancementConfigChange?.(config)
+    }
+
+    const handleEnhancementSettingsChange = (settings: EnhancementSettings) => {
+        onEnhancementSettingsChange?.(settings)
+    }
+
+    const handleEnhancementPreview = async () => {
+        try {
+            setIsEnhancementProcessing(true)
+            setEnhancementError(null)
+
+            // TODO: Implement actual preview generation
+            // This would typically involve:
+            // 1. Getting current video frame
+            // 2. Running enhancement pipeline
+            // 3. Setting preview images
+
+            // For now, simulate processing
+            await new Promise(resolve => setTimeout(resolve, 2000))
+
+            // Simulate preview generation
+            setOriginalPreviewImage(null) // Would be actual original frame
+            setEnhancedPreviewImage(null) // Would be actual enhanced frame
+            setEnhancementMetrics({
+                brightnessAdjustment: 15,
+                contrastAdjustment: 8,
+                colorTemperatureShift: -200,
+                noiseReductionDb: 12.5,
+                volumeAdjustmentDb: 3.2,
+                shakeReduction: 75
+            })
+        } catch (error) {
+            handleEnhancementError(error)
+        } finally {
+            setIsEnhancementProcessing(false)
+        }
+    }
+
+    const handleEnhancementReset = () => {
+        const defaultPreset = getDefaultPreset()
+        onEnhancementConfigChange?.(defaultPreset.config)
+        onEnhancementSettingsChange?.(defaultPreset.settings)
+        setOriginalPreviewImage(null)
+        setEnhancedPreviewImage(null)
+        setEnhancementMetrics(null)
+        setEnhancementError(null)
+        setEnhancementErrorObj(null)
+        setIsRecovering(false)
+    }
+
+    // Error handling methods
+    const handleEnhancementError = (error: any) => {
+        setEnhancementErrorObj(error)
+        setEnhancementError(error?.userMessage || error?.message || 'An error occurred')
+        setIsEnhancementProcessing(false)
+    }
+
+    const handleErrorRetry = () => {
+        if (enhancementErrorObj) {
+            setIsRecovering(true)
+            setEnhancementErrorObj(null)
+            setEnhancementError(null)
+            // Retry the enhancement
+            handleEnhancementPreview()
+        }
+    }
+
+    const handleErrorSkip = () => {
+        setEnhancementErrorObj(null)
+        setEnhancementError(null)
+        setIsRecovering(false)
+        // Continue without enhancement
+    }
+
+    const handleErrorReduceQuality = () => {
+        if (enhancementSettings) {
+            const reducedSettings = {
+                ...enhancementSettings,
+                brightness: Math.round(enhancementSettings.brightness * 0.8),
+                contrast: Math.round(enhancementSettings.contrast * 0.8),
+                saturation: Math.round(enhancementSettings.saturation * 0.8),
+                temperature: Math.round(enhancementSettings.temperature * 0.8),
+                noiseReduction: Math.round(enhancementSettings.noiseReduction * 0.8),
+                volumeBoost: Math.round(enhancementSettings.volumeBoost * 0.8),
+                voiceClarity: Math.round(enhancementSettings.voiceClarity * 0.8),
+                echoReduction: Math.round(enhancementSettings.echoReduction * 0.8),
+                stabilizationStrength: Math.round(enhancementSettings.stabilizationStrength * 0.8)
+            }
+            onEnhancementSettingsChange?.(reducedSettings)
+            setEnhancementErrorObj(null)
+            setEnhancementError(null)
+            setIsRecovering(false)
+        }
+    }
+
+    const handleErrorDismiss = () => {
+        setEnhancementErrorObj(null)
+        setEnhancementError(null)
+        setIsRecovering(false)
     }
 
     const renderBackgroundTab = () => (
@@ -480,6 +633,7 @@ export default function RightSidebar({
                             { name: 'Purple', color: '#a855f7' },
                             { name: 'Fuchsia', color: '#d946ef' },
                             { name: 'Pink', color: '#ec4899' },
+                            { name: 'Crimson', color: '#f25167' },
                             { name: 'Rose', color: '#f43f5e' },
                             { name: 'Dark Red', color: '#991b1b' },
                             { name: 'Dark Blue', color: '#1e3a8a' },
@@ -1502,14 +1656,83 @@ export default function RightSidebar({
         )
     }
 
+    const renderEnhancementsTab = () => (
+        <div className="space-y-4">
+            {/* Error Display */}
+            {enhancementErrorObj && (
+                <EnhancementErrorDisplay
+                    error={enhancementErrorObj}
+                    isRecovering={isRecovering}
+                    onRetry={handleErrorRetry}
+                    onSkip={handleErrorSkip}
+                    onReduceQuality={handleErrorReduceQuality}
+                    onDismiss={handleErrorDismiss}
+                />
+            )}
+
+            {/* Enhancement Panel */}
+            <EnhancementPanel
+                config={enhancementConfig || getDefaultPreset().config}
+                settings={enhancementSettings || getDefaultPreset().settings}
+                onConfigChange={handleEnhancementConfigChange}
+                onSettingsChange={handleEnhancementSettingsChange}
+                onPreview={handleEnhancementPreview}
+                onReset={handleEnhancementReset}
+                isProcessing={isEnhancementProcessing}
+            />
+
+            {/* Enhancement Preview */}
+            {(originalPreviewImage || enhancedPreviewImage || enhancementMetrics) && (
+                <EnhancementPreview
+                    originalImage={originalPreviewImage}
+                    enhancedImage={enhancedPreviewImage}
+                    metrics={enhancementMetrics || undefined}
+                    isGenerating={isEnhancementProcessing}
+                    error={enhancementError}
+                    onRegenerate={handleEnhancementPreview}
+                />
+            )}
+
+            {/* Enhancement Progress */}
+            {isEnhancementProcessing && (
+                <EnhancementProgress
+                    isVisible={isEnhancementProcessing}
+                    progress={enhancementProgress}
+                    currentStep="Processing enhancements..."
+                    estimatedTimeRemaining={30}
+                    framesProcessed={0}
+                    totalFrames={100}
+                    currentFPS={0}
+                    onCancel={() => setIsEnhancementProcessing(false)}
+                    error={enhancementError}
+                />
+            )}
+        </div>
+    )
+
     const renderTabContent = () => {
         switch (activeTab) {
+            case 'templates':
+                return (
+                    <TemplatesPanel
+                        onApplyColorGrading={onApplyColorGrading}
+                        onApplyAspectRatio={onApplyAspectRatio}
+                        onApplyBrandKit={onApplyBrandKit}
+                        onApplyTransition={onApplyTransition}
+                        currentColorPreset={currentColorPreset}
+                        currentAspectRatio={currentAspectRatio}
+                        currentBrandKit={currentBrandKit}
+                    />
+                )
+            case 'enhancements':
+                return renderEnhancementsTab()
             case 'media':
                 return (
                     <ClipManager
                         clips={clips}
                         onAddClip={onAddClip}
                         onUpdateClip={onUpdateClip}
+                        onRemoveClip={onRemoveClip}
                     />
                 )
             case 'background':

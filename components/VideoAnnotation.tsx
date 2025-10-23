@@ -25,7 +25,7 @@ export interface Annotation {
 }
 
 interface VideoAnnotationProps {
-    videoRef: React.RefObject<HTMLVideoElement>
+    videoRef: React.RefObject<HTMLVideoElement | null>
     currentTime: number
     annotations: Annotation[]
     onAddAnnotation: (annotation: Annotation) => void
@@ -232,7 +232,7 @@ export default function VideoAnnotation({
 
         if (selectedTool === 'freehand') {
             setCurrentPoints(prev => [...prev, point])
-            
+
             // Draw preview
             const canvas = canvasRef.current
             if (!canvas) return

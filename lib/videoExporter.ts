@@ -1,5 +1,6 @@
 import { ExportOptions } from '@/components/ExportDialog'
 import { convertWebMToMP4, isFFmpegSupported } from './ffmpegConverter'
+import { EnhancementPipeline, EnhancementConfig, EnhancementSettings } from './videoEnhancement'
 
 interface VideoExportParams {
     videoUrl: string
@@ -18,7 +19,14 @@ interface VideoExportParams {
         type: 'wallpaper' | 'gradient' | 'color' | 'image'
         padding: number
         borderRadius: number
+        backgroundColor?: string
+        gradientColors?: string[]
+        wallpaperIndex?: number
+        wallpaperUrl?: string
+        blurAmount?: number
     }
+    enhancementConfig?: EnhancementConfig
+    enhancementSettings?: EnhancementSettings
     onProgress?: (progress: number) => void
 }
 
@@ -30,6 +38,8 @@ export async function exportVideo(params: VideoExportParams): Promise<Blob> {
         videoDuration,
         webcamSettings,
         backgroundSettings,
+        enhancementConfig,
+        enhancementSettings,
         onProgress
     } = params
 
@@ -41,6 +51,33 @@ export async function exportVideo(params: VideoExportParams): Promise<Blob> {
         const videoBlob = await videoResponse.blob()
 
         onProgress?.(0.15) // 15% - Main video loaded
+
+        // Apply video enhancements if configured
+        let enhancedVideoBlob = videoBlob
+        if (enhancementConfig && enhancementSettings) {
+            try {
+                onProgress?.(0.20) // 20% - Starting enhancement
+
+                console.log('Applying video enhancements...')
+                const pipeline = new EnhancementPipeline(enhancementConfig)
+                await pipeline.initialize()
+
+                enhancedVideoBlob = await pipeline.enhanceVideo(videoBlob, (enhancementProgress: number) => {
+                    // Map enhancement progress (0-1) to overall progress (20%-30%)
+                    const overallProgress = 0.20 + (enhancementProgress * 0.10)
+                    onProgress?.(overallProgress)
+                })
+
+                console.log('Video enhancement complete')
+                onProgress?.(0.30) // 30% - Enhancement complete
+            } catch (error) {
+                console.warn('Video enhancement failed, using original video:', error)
+                // Continue with original video if enhancement fails
+                onProgress?.(0.30) // 30% - Enhancement skipped
+            }
+        } else {
+            onProgress?.(0.30) // 30% - No enhancement configured
+        }
 
         // If we need to include webcam and it exists
         let webcamBlob: Blob | null = null
@@ -69,7 +106,7 @@ export async function exportVideo(params: VideoExportParams): Promise<Blob> {
 
         // Process video with canvas (30% to 85%)
         const webmBlob = await processVideoWithCanvas(
-            videoBlob,
+            enhancedVideoBlob, // Use enhanced video instead of original
             webcamBlob,
             dimensions,
             options,
@@ -88,12 +125,12 @@ export async function exportVideo(params: VideoExportParams): Promise<Blob> {
         // Convert to MP4 if requested and supported (85% to 98%)
         let finalBlob = webmBlob
         let actualFormat = options.format
-        
+
         if (options.format === 'mp4') {
             console.log('MP4 format requested, checking FFmpeg support...')
             const ffmpegSupported = await isFFmpegSupported()
             console.log('FFmpeg supported:', ffmpegSupported)
-            
+
             if (ffmpegSupported) {
                 console.log('Converting WebM to MP4...')
                 console.log('WebM blob size:', webmBlob.size, 'bytes')
@@ -118,7 +155,7 @@ export async function exportVideo(params: VideoExportParams): Promise<Blob> {
                 actualFormat = 'webm'
             }
         }
-        
+
         console.log('Final export format:', actualFormat)
         console.log('Final blob size:', finalBlob.size, 'bytes')
         console.log('Final blob type:', finalBlob.type)
@@ -163,7 +200,7 @@ async function processVideoWithCanvas(
             // Create video elements
             const video = document.createElement('video')
             let webcamVideo: HTMLVideoElement | null = null
-            
+
             // Only create webcam video if we have a blob and settings say to use it
             if (webcamBlob && webcamSettings?.visible) {
                 webcamVideo = document.createElement('video')
@@ -186,12 +223,12 @@ async function processVideoWithCanvas(
                 const timeout = setTimeout(() => {
                     reject(new Error('Video metadata loading timeout'))
                 }, 10000)
-                
+
                 video.onloadedmetadata = () => {
                     clearTimeout(timeout)
                     resolve(null)
                 }
-                
+
                 video.onerror = () => {
                     clearTimeout(timeout)
                     reject(new Error('Video loading error'))
@@ -208,7 +245,7 @@ async function processVideoWithCanvas(
                         }),
                         new Promise((resolve) => setTimeout(resolve, 3000)) // 3 second timeout
                     ])
-                    
+
                     // Check if webcam video actually loaded
                     if (webcamVideo.readyState < 2) {
                         console.warn('Webcam video did not load properly, disabling webcam overlay')
@@ -217,7 +254,9 @@ async function processVideoWithCanvas(
                     }
                 } catch (error) {
                     console.warn('Webcam loading failed, continuing without webcam:', error)
-                    webcamVideo.remove()
+                    if (webcamVideo) {
+                        webcamVideo.remove()
+                    }
                     webcamVideo = null
                 }
             }
@@ -284,7 +323,7 @@ async function processVideoWithCanvas(
 
             // Start recording
             mediaRecorder.start(100) // Collect data every 100ms
-            
+
             // Play videos
             await video.play()
             if (webcamVideo) {
@@ -348,9 +387,9 @@ async function processVideoWithCanvas(
 
                 // Check if we should continue rendering
                 const elapsed = (Date.now() - startTime) / 1000
-                const shouldContinue = video.currentTime < duration && 
-                                      elapsed < duration + 5 && // Add 5 second buffer
-                                      !video.ended
+                const shouldContinue = video.currentTime < duration &&
+                    elapsed < duration + 5 && // Add 5 second buffer
+                    !video.ended
 
                 if (shouldContinue) {
                     requestAnimationFrame(renderFrame)
